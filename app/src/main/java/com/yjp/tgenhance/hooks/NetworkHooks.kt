@@ -6,6 +6,7 @@ import com.yjp.tgenhance.XLog.safe
 import com.yjp.tgenhance.diag.HookStats
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodHook.MethodHookParam
+import de.robv.android.xposed.XC_MethodReplacement
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 
