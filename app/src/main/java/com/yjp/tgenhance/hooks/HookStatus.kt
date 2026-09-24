@@ -37,4 +37,25 @@ object HookStatus {
     } catch (t: Throwable) {
         emptyList()
     }
+
+    /** 挂载过程中抛异常的 Hook 组（与「功能不可用」是两件事）。 */
+    private val failedGroups: MutableSet<String> =
+        Collections.synchronizedSet(HashSet<String>())
+
+    /**
+     * 登记一个挂载失败的组。
+     *
+     * 「功能不可用」= 目标类不存在，属于正常情况（老版本本来就没有）；
+     * 「挂载失败」= 类在、但挂载过程抛了异常，通常意味着签名变了或者
+     * 与其他模块冲突，需要单独拎出来看。
+     */
+    fun markGroupFailed(group: String) {
+        failedGroups.add(group)
+    }
+
+    fun failedGroups(): List<String> = try {
+        failedGroups.sorted()
+    } catch (t: Throwable) {
+        emptyList()
+    }
 }

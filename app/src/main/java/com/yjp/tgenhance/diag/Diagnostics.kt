@@ -91,10 +91,17 @@ object Diagnostics {
         // 客户端信息放最前面：它是解读后面所有结果的上下文
         val profile = ClientProfileDetector.current()
         if (profile != null) {
+            val outdated = profile.isBelowSupportedVersion()
             items += CheckItem(
                 owner = "客户端",
                 member = profile.summary(),
-                ok = profile.launchActivity != null && profile.storiesController != null
+                ok = profile.launchActivity != null &&
+                    profile.storiesController != null && !outdated,
+                suggestions = ArrayList<String>().apply {
+                    if (outdated) add("客户端版本偏旧：部分功能在本版上不可用")
+                    if (profile.launchActivity == null) add("未识别到主 Activity：配置热更新退回系统 Activity")
+                    if (profile.storiesController == null) add("未识别到 StoriesController：隐藏 Stories 不可用")
+                }
             )
             // 用解析出的真实类路径做自检，而不是写死路径
             profile.launchActivity?.let {
@@ -111,6 +118,7 @@ object Diagnostics {
         configConsistency()?.let { items += it }
         conflictCheck()?.let { items += it }
         availabilityCheck()?.let { items += it }
+        installFailureCheck()?.let { items += it }
         items += frameworkCheck()
         lastReport = items
 
@@ -178,6 +186,26 @@ object Diagnostics {
             member = "被其他模块占用的 Hook 点（${list.size} 个）",
             ok = false,
             suggestions = list.take(8)
+        )
+    }
+
+    /**
+     * 挂载失败检查：哪些组的安装过程抛了异常。
+     *
+     * 和「功能不可用」要分开看：不可用是目标类压根不存在（老版本的正常现象），
+     * 失败是类在、但挂载时炸了 —— 通常意味着签名变了或与其他模块冲突，
+     * 属于真正需要修的问题。
+     */
+    private fun installFailureCheck(): CheckItem? {
+        val failed = HookStatus.failedGroups()
+        if (failed.isEmpty()) return null
+
+        XLog.w("[诊断] 挂载失败的组：${failed.joinToString("、")}")
+        return CheckItem(
+            owner = "挂载",
+            member = "${failed.size} 组挂载失败（异常，非「类不存在」）",
+            ok = false,
+            suggestions = failed
         )
     }
 

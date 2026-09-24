@@ -11,6 +11,7 @@ import com.yjp.tgenhance.hooks.AccountHooks
 import com.yjp.tgenhance.hooks.ClientProfileDetector
 import com.yjp.tgenhance.hooks.HookCatalog
 import com.yjp.tgenhance.hooks.HookInstaller
+import com.yjp.tgenhance.hooks.HookStatus
 import com.yjp.tgenhance.hooks.NetworkHooks
 import com.yjp.tgenhance.hooks.PrivacyHooks
 import com.yjp.tgenhance.hooks.StealthHooks
@@ -81,6 +82,7 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         if (failed.isEmpty()) {
             XLog.result("挂载", "全部 ${installResults.size} 组挂载成功")
         } else {
+            failed.forEach { HookStatus.markGroupFailed(it) }
             XLog.e("[挂载] ${failed.size}/${installResults.size} 组失败：${failed.joinToString("、")}")
             XLog.e("[挂载] 多数情况是 Telegram 版本变动或作用域未勾选，请连同版本号一起反馈")
         }

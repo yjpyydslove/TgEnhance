@@ -130,35 +130,52 @@ object PrivacyHooks {
     /**
      * 判定是否服务器撤回。详见类注释。
      *
-     * 参数布局（源码 9307 / 9311 / 9319 三个重载）：
-     *   [0] ArrayList messages
-     *   [1] ArrayList randoms        <- 服务器撤回时为 null
-     *   [2] EncryptedChat            <- 服务器撤回时为 null
-     *   [3] long dialogId            <- 各重载位置一致
-     *   [4..] 其余参数随重载变化，故 forAll 按类型扫描
+     * ### v5.5.0 起：主要判据改为「按类型扫描」，不再依赖参数索引
+     *
+     * 原实现靠固定索引认参数（`args[1]` 是 randoms、`args[2]` 是 encryptedChat、
+     * `args[3]` 是 dialogId）。官方一旦增删参数或调整顺序，这些索引会**静默错位** ——
+     * 表现是「防撤回忽然不工作了」，或者更糟：误拦用户自己删的消息。
+     *
+     * 现在按类型推导：
+     *   - 第一个集合 = 消息列表，其余集合（randoms）必须为空
+     *   - 不允许出现集合/数值/布尔之外的复杂对象（EncryptedChat 之类）
+     *   - 存在值为 true 的布尔（forAll，「为所有人删除」）
+     *
+     * 只有 dialogId 保留索引取值，且额外复核类型 —— 因为它和 threadId 都是 long，
+     * 单看类型无法区分；而 `dialogId == 0` 这条判据一旦放宽成「任一 long 为 0」，
+     * 就会把用户删自己的消息也拦下来。宁可少拦，不可误伤。
      */
     private fun isServerSideRecall(param: MethodHookParam): Boolean {
         val args = param.args
         if (args.size < 6) return false
 
-        // randoms 与 encryptedChat 必须都是 null
-        if (args.getOrNull(1) != null) return false
-        if (args.getOrNull(2) != null) return false
+        val collections = args.filterIsInstance<Collection<*>>()
+        if (collections.isEmpty()) return false
 
-        // forAll 必须为 true，即「为所有人删除」= 撤回语义
+        val messages = collections.first()
+        if (messages.isEmpty()) return false
+
+        // 除消息列表外的集合（randoms）若含内容，说明是用户主动删除
+        if (collections.drop(1).any { it.isNotEmpty() }) return false
+
+        // 出现额外的复杂对象参数（EncryptedChat 等）同样按用户删除处理
+        if (args.any { it != null && !isSimpleValue(it) }) return false
+
+        // forAll 必须为 true
         if (args.none { it is Boolean && it }) return false
-
-        // 消息列表必须非空
-        val messages = args.getOrNull(0)
-        if (messages !is Collection<*> || messages.isEmpty()) return false
 
         // 判据一：调用栈来自服务器更新处理链路（最精确）
         if (calledFromServerUpdateChain()) return true
 
         // 判据二：dialogId == 0，对应服务器撤回使用的 key=0 槽位
-        val dialogId = args.getOrNull(3) as? Long
-        return dialogId != null && dialogId == 0L
+        val dialogId = args.getOrNull(3)
+        return dialogId is Long && dialogId == 0L
     }
+
+    /** 简单值：不参与「用户主动删除」的判据。 */
+    private fun isSimpleValue(value: Any): Boolean =
+        value is Collection<*> || value is Long || value is Int ||
+            value is Boolean || value is String
 
     /**
      * 检测当前调用栈是否来自服务器更新处理链路。

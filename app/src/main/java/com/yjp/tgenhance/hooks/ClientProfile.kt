@@ -36,6 +36,36 @@ data class ClientProfile(
         append(kind.displayName).append(' ').append(versionName)
         append("（").append(packageName).append("）")
     }
+
+    /**
+     * 版本号是否低于本模块的适配下限。
+     *
+     * 本模块的 Hook 点取自 Telegram 10.x 时期的源码。更早的版本上，
+     * 一部分类与方法（Stories、已读回执的新实现等）根本不存在 ——
+     * 模块会跳过它们并继续工作，但用户看到的是「某个开关点了没反应」。
+     * 与其让他逐项排查，不如直接说明「你的客户端偏旧」。
+     */
+    fun isBelowSupportedVersion(): Boolean {
+        val current = versionNumber()
+        return current > 0 && current < MIN_SUPPORTED_VERSION
+    }
+
+    /** 把 `11.2.3` 这样的版本名压成可比较的整数（110203）。解析不出时返回 0。 */
+    private fun versionNumber(): Int {
+        val parts = versionName.split('.')
+        if (parts.isEmpty()) return 0
+        var result = 0
+        for (i in 0 until 3) {
+            val piece = parts.getOrNull(i)?.takeWhile { it.isDigit() }?.toIntOrNull() ?: 0
+            result = result * 100 + piece.coerceIn(0, 99)
+        }
+        return result
+    }
+
+    companion object {
+        /** 适配下限：低于此版本的客户端只保证部分功能可用。 */
+        private const val MIN_SUPPORTED_VERSION = 9_00_00
+    }
 }
 
 /**
