@@ -2,6 +2,7 @@ package com.yjp.tgenhance
 
 import android.app.AndroidAppHelper
 import android.os.Handler
+import android.os.SystemClock
 import com.yjp.tgenhance.XLog.guard
 import com.yjp.tgenhance.diag.DiagBridge
 import com.yjp.tgenhance.diag.Diagnostics
@@ -54,21 +55,32 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
             "prefs.reload",
         )
 
-        XLog.safe("AccountHooks") { AccountHooks.install(lpparam.classLoader) }
-        XLog.safe("ThemeHooks") { ThemeHooks.install(lpparam.classLoader) }
-        XLog.safe("NetworkHooks") { NetworkHooks.install(lpparam.classLoader) }
-        XLog.safe("PrivacyHooks") { PrivacyHooks.install(lpparam.classLoader) }
-        XLog.safe("StealthHooks") { StealthHooks.install(lpparam.classLoader) }
-        XLog.safe("PrefsReload") { installPrefsReloadHook(lpparam.classLoader) }
+        // 各分组独立挂载：任何一组出错都不影响其余组。
+        // 用 timed 而非 safe，把每一步耗时打到日志里 —— 这段代码在
+        // handleLoadPackage 里同步执行，耗时直接算进 Telegram 的启动时间。
+        val startedAt = SystemClock.elapsedRealtime()
+        XLog.timed("AccountHooks") { AccountHooks.install(lpparam.classLoader) }
+        XLog.timed("ThemeHooks") { ThemeHooks.install(lpparam.classLoader) }
+        XLog.timed("NetworkHooks") { NetworkHooks.install(lpparam.classLoader) }
+        XLog.timed("PrivacyHooks") { PrivacyHooks.install(lpparam.classLoader) }
+        XLog.timed("StealthHooks") { StealthHooks.install(lpparam.classLoader) }
+        XLog.timed("PrefsReload") { installPrefsReloadHook(lpparam.classLoader) }
 
+        var diagCost = 0L
         if (Prefs.diagEnabled) {
-            XLog.safe("Diagnostics") { Diagnostics.run(lpparam.classLoader) }
+            val diagStart = SystemClock.elapsedRealtime()
+            XLog.timed("Diagnostics") { Diagnostics.run(lpparam.classLoader) }
+            diagCost = SystemClock.elapsedRealtime() - diagStart
+        } else {
+            XLog.i("[诊断] 开关关闭，跳过自检")
         }
 
         // 挂载完成后安排一次触发统计输出：用于验证 Hook 是否**真的被调用**，
         // 而不仅仅是「挂上了」
-        XLog.safe("HookStats") { scheduleStatsReport(lpparam.classLoader) }
+        XLog.timed("HookStats") { scheduleStatsReport(lpparam.classLoader) }
 
+        val total = SystemClock.elapsedRealtime() - startedAt
+        XLog.result("性能", "挂载总耗时 ${total}ms（其中自检 ${diagCost}ms）")
         XLog.i("全部模块挂载流程结束")
     }
 

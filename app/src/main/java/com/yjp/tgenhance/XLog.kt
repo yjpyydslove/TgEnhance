@@ -75,6 +75,24 @@ object XLog {
         }
 
     /**
+     * 带计时的 [safe]，用于挂载阶段。
+     *
+     * 模块在 Telegram 的 `handleLoadPackage` 里同步执行，这段耗时会直接加到
+     * 应用启动时间上 —— 用户体感是「装了模块之后 TG 打开变慢了」。
+     * 把每一步的耗时打出来，才能判断某个 Hook 是否值得重新实现。
+     */
+    inline fun <T> timed(scope: String, block: () -> T): T? =
+        try {
+            val start = android.os.SystemClock.elapsedRealtime()
+            val result = block()
+            result("性能", "$scope 耗时 ${android.os.SystemClock.elapsedRealtime() - start}ms")
+            result
+        } catch (t: Throwable) {
+            e("[$scope] 执行失败", t)
+            null
+        }
+
+    /**
      * Hook 回调的统一兜底。
      *
      * Xposed 框架本身会捕获回调异常并继续执行原方法，但它的日志里看不出这是
