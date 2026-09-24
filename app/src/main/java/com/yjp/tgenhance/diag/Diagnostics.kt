@@ -111,7 +111,7 @@ object Diagnostics {
             val outdated = profile.isBelowSupportedVersion()
             items += CheckItem(
                 owner = "客户端",
-                member = profile.summary(),
+                member = profile.summary() + " · " + environmentSummary(),
                 ok = profile.launchActivity != null &&
                     profile.storiesController != null && !outdated,
                 suggestions = ArrayList<String>().apply {
@@ -228,6 +228,20 @@ object Diagnostics {
             ok = false,
             suggestions = failed
         )
+    }
+
+    /**
+     * 设备与系统环境。
+     *
+     * 反馈问题时「什么手机、什么系统」几乎必问 —— 很多 Hook 失效其实是
+     * 特定 ROM 的类加载差异或系统版本行为变化，光看客户端版本判断不出来。
+     * 直接写进诊断报告，省一轮来回问。
+     */
+    private fun environmentSummary(): String = try {
+        "Android ${android.os.Build.VERSION.RELEASE}(API ${android.os.Build.VERSION.SDK_INT})" +
+            " · ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+    } catch (t: Throwable) {
+        "环境未知"
     }
 
     /**
