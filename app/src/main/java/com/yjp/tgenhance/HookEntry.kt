@@ -8,6 +8,7 @@ import com.yjp.tgenhance.diag.DiagBridge
 import com.yjp.tgenhance.diag.Diagnostics
 import com.yjp.tgenhance.diag.HookStats
 import com.yjp.tgenhance.hooks.AccountHooks
+import com.yjp.tgenhance.hooks.HookCatalog
 import com.yjp.tgenhance.hooks.HookInstaller
 import com.yjp.tgenhance.hooks.NetworkHooks
 import com.yjp.tgenhance.hooks.PrivacyHooks
@@ -46,15 +47,8 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         // 预登记全部 hook 点：计数器默认是「首次触发才创建」，
         // 不预登记的话未触发的项不会出现在快照里，设置界面就无法区分
         // 「功能没生效」和「这个点根本没挂上」。
-        HookStats.expect(
-            "account.maxCount", "account.expand",
-            "ui.typeface.seen", "ui.typeface.replaced", "ui.stories",
-            "net.proxyProbe", "net.autoDownload.blocked", "net.autoplay.blocked",
-            "privacy.typing", "privacy.deleteMessages", "privacy.recall.blocked",
-            "privacy.readReceipt.blocked", "privacy.hideOnline",
-            "stealth.classLoad", "stealth.stackTrace", "stealth.pkgQuery",
-            "prefs.reload",
-        )
+        // 清单来自 HookCatalog —— 新增 hook 点只需改那一处。
+        HookStats.expect(*HookCatalog.statKeys.toTypedArray())
 
         // 各分组独立挂载：任何一组出错都不影响其余组。
         // 用 timed 而非 safe，把每一步耗时打到日志里 —— 这段代码在

@@ -34,6 +34,7 @@ import com.yjp.tgenhance.core.FeatureGroup
 import com.yjp.tgenhance.core.Features
 import com.yjp.tgenhance.core.RiskLevel
 import com.yjp.tgenhance.diag.DiagProtocol
+import com.yjp.tgenhance.hooks.HookCatalog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -604,7 +605,7 @@ class SettingsActivity : Activity() {
         var active = 0
         var idle = 0
         for ((name, count) in items) {
-            val label = HOOK_LABELS[name] ?: name
+            val label = HookCatalog.labelOf(name)
             if (count > 0) {
                 active++
                 sb.append("● ").append(label).append("  已触发 ").append(count).append(" 次\n")
@@ -1149,27 +1150,7 @@ class SettingsActivity : Activity() {
 
         // 「关闭全部功能」的 key 清单、以及「导入时需要风险确认的 key 清单」，
         // v3.0.0 起一律从 Features 注册表派生（Features.disableAllKeys /
-        // Features.riskyTitles）。此处不再维护第二份 —— 两份清单迟早会不一致。
-
-        /** hook 点 -> 用户可读名称。新增 hook 点时记得同步，否则界面会显示原始 key。 */
-        val HOOK_LABELS = mapOf(
-            "account.maxCount" to "账号上限查询",
-            "account.expand" to "账号数组扩容",
-            "ui.typeface.seen" to "字体加载请求",
-            "ui.typeface.replaced" to "字体替换",
-            "ui.stories" to "Stories 显示查询",
-            "net.proxyProbe" to "代理连通性探测",
-            "net.autoDownload.blocked" to "拦截自动下载",
-            "net.autoplay.blocked" to "拦截自动播放",
-            "privacy.typing" to "输入状态发送",
-            "privacy.deleteMessages" to "消息删除",
-            "privacy.recall.blocked" to "拦截撤回",
-            "privacy.readReceipt.blocked" to "拦截已读上报",
-            "privacy.hideOnline" to "隐藏在线状态",
-            "stealth.classLoad" to "拒绝框架类查询",
-            "stealth.stackTrace" to "剔除框架堆栈帧",
-            "stealth.pkgQuery" to "拒绝模块包名查询",
-            "prefs.reload" to "配置热更新",
-        )
+        // Features.riskyTitles）；hook 点的展示名 v5.0.0 起从 HookCatalog 派生。
+        // 此处不再维护任何第二份清单 —— 两份清单迟早会不一致。
     }
 }
