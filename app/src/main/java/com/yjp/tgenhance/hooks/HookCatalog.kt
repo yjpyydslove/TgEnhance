@@ -66,6 +66,7 @@ object HookCatalog {
 
         // 框架
         HookPoint("prefs.reload", "配置热更新"),
+        HookPoint("internal.callbackError", "回调异常"),
     )
 
     /** 全部计数 key，供 `HookStats.expect` 一次性登记。 */

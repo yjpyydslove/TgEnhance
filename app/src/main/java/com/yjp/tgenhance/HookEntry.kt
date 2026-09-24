@@ -59,6 +59,10 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         // 读取配置（只读 XSharedPreferences）
         Prefs.initForHook()
 
+        // 回调异常计入统计：出问题时能在「运行状态」里看到，
+        // 而不是埋在日志的某一行里没人注意
+        XLog.onCallbackError = { HookStats.hit("internal.callbackError") }
+
         // 预登记全部 hook 点：计数器默认是「首次触发才创建」，
         // 不预登记的话未触发的项不会出现在快照里，设置界面就无法区分
         // 「功能没生效」和「这个点根本没挂上」。

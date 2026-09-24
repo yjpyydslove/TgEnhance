@@ -21,6 +21,16 @@ object XLog {
     @Volatile
     var enabled: Boolean = true
 
+    /**
+     * 回调异常的通知钩子（v6.3.0）。
+     *
+     * 由 [com.yjp.tgenhance.HookEntry] 在挂载时注册为「记一次内部异常计数」。
+     * 用回调而不是直接调 HookStats，是为了避免 XLog ↔ HookStats 互相依赖 ——
+     * HookStats 本身就用 XLog 输出，反过来再让 XLog 调它，依赖就成了环。
+     */
+    @Volatile
+    var onCallbackError: ((String) -> Unit)? = null
+
     fun i(msg: String) {
         Log.i(TAG, msg)
         write(msg)
@@ -106,6 +116,11 @@ object XLog {
             block()
         } catch (t: Throwable) {
             e("[$scope] 回调异常（已忽略，不影响 Telegram 自身逻辑）", t)
+            // 让「回调抛过异常」变成可统计的事实，而不是埋在日志里
+            try {
+                onCallbackError?.invoke(scope)
+            } catch (ignored: Throwable) {
+            }
         }
     }
 }
