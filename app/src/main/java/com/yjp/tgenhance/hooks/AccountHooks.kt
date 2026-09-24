@@ -251,7 +251,7 @@ object AccountHooks {
                             // 单个账号查询失败不影响整体结果
                         }
                     }
-                    false
+                    return false
                 }
             })
             XLog.result("多账号", "hasPremiumOnAccounts() 已扩展到 $max 个账号范围")
