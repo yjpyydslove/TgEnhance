@@ -1,11 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  配色对齐 Telegram Android 官方 Day 主题。
+  accent 取自官方 tg_blue，其余取自官方 windowBackground / subtext / divider。
+-->
 <resources>
-    <color name="bg">#FFF5F6F8</color>
+    <!-- 页面背景：官方 Day 主题设置页背景 -->
+    <color name="bg">#FFFFFFFF</color>
+    <!-- 分组卡片 -->
     <color name="card">#FFFFFFFF</color>
-    <color name="text_primary">#FF14181F</color>
-    <color name="text_secondary">#FF6B7280</color>
-    <color name="divider">#FFE3E6EB</color>
-    <color name="accent">#FF2A8CF0</color>
+    <!-- 卡片之间的间隔底色（官方用浅灰横条分隔分组） -->
+    <color name="section_gap">#FFF1F1F1</color>
+
+    <color name="text_primary">#FF000000</color>
+    <color name="text_secondary">#FF7B7B7B</color>
+    <!-- 官方分割线是 6% 黑，而非实色灰 -->
+    <color name="divider">#10000000</color>
+
+    <!-- 官方主色 -->
+    <color name="accent">#FF3390EC</color>
+
+    <!-- 开关：未选中轨道 / 滑块 -->
+    <color name="switch_off">#FFC8C8C8</color>
+    <color name="switch_thumb">#FFFFFFFF</color>
+
+    <color name="danger">#FFE53935</color>
+    <color name="ripple">#14000000</color>
+
     <color name="warn_bg">#FFFFF6E5</color>
     <color name="warn_text">#FF8A6100</color>
 </resources>

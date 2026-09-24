@@ -27,11 +27,15 @@
             android:resource="@array/xposed_scope" />
 
         <!-- ============ 设置界面 ============ -->
+        <!--
+          configChanges 不含 uiMode：切深浅色时让系统重建 Activity，
+          这样代码里读取的颜色资源（卡片、开关、分割线）才会跟着刷新。
+        -->
         <activity
             android:name=".ui.SettingsActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:configChanges="orientation|screenSize|keyboardHidden|uiMode">
+            android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

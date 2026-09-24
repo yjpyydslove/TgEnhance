@@ -1,11 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  配色对齐 Telegram Android 官方 Night 主题。
+  官方夜间默认主色是紫色 #8774E1，此处跟随官方观感。
+-->
 <resources>
-    <color name="bg">#FF14171C</color>
-    <color name="card">#FF1E232B</color>
-    <color name="text_primary">#FFEDF0F4</color>
-    <color name="text_secondary">#FF9AA3AF</color>
-    <color name="divider">#FF2B313A</color>
-    <color name="accent">#FF5AA9FF</color>
+    <!-- 官方 Night 主题页面底色 -->
+    <color name="bg">#FF0F0F0F</color>
+    <!-- 官方 Night 主题 windowBackground，用作卡片 -->
+    <color name="card">#FF212121</color>
+    <color name="section_gap">#FF0F0F0F</color>
+
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#FF9E9E9E</color>
+    <color name="divider">#12FFFFFF</color>
+
+    <color name="accent">#FF8774E1</color>
+
+    <color name="switch_off">#FF4D4D4D</color>
+    <color name="switch_thumb">#FFFFFFFF</color>
+
+    <color name="danger">#FFEF5350</color>
+    <color name="ripple">#20FFFFFF</color>
+
     <color name="warn_bg">#FF2E2716</color>
     <color name="warn_text">#FFE0B65A</color>
 </resources>

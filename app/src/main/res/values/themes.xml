@@ -1,7 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  主题对齐 Telegram 官方观感：
+  - 设置页无 ActionBar，内容自绘（TG 也没有系统 ActionBar）
+  - 状态栏与页面同色 + 深色图标（windowLightStatusBar）
+  - 对话框走 16dp 圆角卡片，与 TG 的弹窗一致
+-->
 <resources>
+
     <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.Light.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:colorAccent">@color/accent</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:alertDialogTheme">@style/AppDialogTheme</item>
+        <item name="android:windowContentTransitions">false</item>
     </style>
+
+    <style name="AppDialogTheme" parent="@android:style/Theme.DeviceDefault.Light.Dialog.Alert">
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:windowBackground">@drawable/bg_dialog</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+    </style>
+
 </resources>

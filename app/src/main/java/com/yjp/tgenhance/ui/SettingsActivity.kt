@@ -2,17 +2,20 @@ package com.yjp.tgenhance.ui
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.res.ColorStateList
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
+import android.graphics.drawable.RippleDrawable
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.CompoundButton
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import com.yjp.tgenhance.Prefs
@@ -21,11 +24,18 @@ import com.yjp.tgenhance.R
 /**
  * 设置界面。
  *
+ * 版式对齐 Telegram 官方客户端：
+ *  - 页面底色 + 16dp 圆角分组卡片（官方设置页的分组形态）
+ *  - 分组标题用主色 accent，正文 16sp / 说明 13sp 灰
+ *  - 分割线从文字左侧 16dp 起，颜色是 6% 前景色（不是实色灰）
+ *  - 开关是自绘的 [TgSwitch]，滑块大于轨道并带投影
+ *  - 深色模式下主色跟随官方 Night 主题的紫色 #8774E1
+ *
  * 全部用代码构建，不依赖 XML 布局 —— 模块本身很轻，这样能减少资源耦合，
  * 也避免 LSPosed 在部分 ROM 上解析资源时出问题。
  *
  * 风险项处理：带风险的开关在**开启时**弹出说明并要求确认，而不是静默生效。
- * 用户确认后才写入配置；取消则把开关状态回滚。
+ * 用户确认后才写入配置；取消则把开关状态静默回滚。
  */
 class SettingsActivity : Activity() {
 
@@ -37,14 +47,17 @@ class SettingsActivity : Activity() {
         super.onCreate(savedInstanceState)
         Prefs.initForApp(this)
 
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, dp(32))
+        }
+        root = content
+
         val scroll = ScrollView(this).apply {
             setBackgroundColor(color(R.color.bg))
+            isFillViewport = true
+            addView(content, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         }
-        root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(20), dp(16), dp(40))
-        }
-        scroll.addView(root)
         setContentView(scroll)
 
         buildHeader()
@@ -61,156 +74,198 @@ class SettingsActivity : Activity() {
     // ------------------------------------------------------------------
 
     private fun buildHeader() {
-        root.addView(textView("TG 增强", 24f, R.color.text_primary).apply {
-            setTypeface(typeface, Typeface.BOLD)
-            setPadding(dp(4), 0, 0, dp(4))
-        })
-        root.addView(
-            textView("针对 Telegram 客户端的本地功能增强。修改后需重启 Telegram 生效。", 13f, R.color.text_secondary).apply {
-                setPadding(dp(4), 0, 0, dp(16))
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(28), dp(16), dp(4))
+        }
+
+        val badge = FrameLayout(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(14).toFloat()
+                setColor(color(R.color.accent))
             }
+        }
+        badge.addView(
+            ImageView(this).apply {
+                setImageResource(R.drawable.ic_plane)
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+            },
+            FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER)
+        )
+        header.addView(badge, LinearLayout.LayoutParams(dp(56), dp(56)))
+
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(
+            TextView(this).apply {
+                text = getString(R.string.app_name)
+                textSize = 22f
+                setTextColor(color(R.color.text_primary))
+                typeface = Typeface.DEFAULT_BOLD
+            }
+        )
+        texts.addView(
+            TextView(this).apply {
+                text = "Telegram 本地功能增强"
+                textSize = 13f
+                setTextColor(color(R.color.text_secondary))
+                setPadding(0, dp(3), 0, 0)
+            }
+        )
+        header.addView(
+            texts,
+            LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginStart = dp(14) }
+        )
+
+        root.addView(header)
+        root.addView(
+            TextView(this).apply {
+                text = getString(R.string.restart_tip)
+                textSize = 13f
+                setTextColor(color(R.color.text_secondary))
+                setPadding(dp(16), dp(14), dp(16), 0)
+                setLineSpacing(dp(3).toFloat(), 1f)
+            },
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
         )
     }
 
     private fun buildAccountSection() {
-        val card = sectionCard("多账号")
-        groupSwitch(
-            card,
+        section(
+            sectionTitle = "多账号",
+            groupTitle = "启用多账号上限提升",
+            groupSummary = "解锁 Telegram 原生限制：免费版 3 个、会员版 5 个账号。",
             groupKey = Prefs.ENABLE_ACCOUNT,
-            title = "启用多账号上限提升",
-            summary = "解锁 Telegram 原生限制：免费版 3 个、会员版 5 个账号；开启后可按下方数值提升。",
-            risk = Risk.MEDIUM,
-            riskMessage = "该功能会扩容 Telegram 内部的账号实例数组。\n\n" +
+            groupRisk = Risk.MEDIUM,
+            groupRiskMessage = "该功能会扩容 Telegram 内部的账号实例数组。\n\n" +
                 "在少数版本上，超出原生上限的账号可能出现同步异常或不稳定。\n" +
                 "建议先用默认值 6 观察一段时间，确认稳定后再继续上调。"
-        )
-        intRow(
-            card,
-            key = Prefs.MAX_ACCOUNTS,
-            title = "最大账号数",
-            summary = "可设置 3 – 16 个账号。",
-            min = Prefs.MIN_ACCOUNTS_LIMIT,
-            max = Prefs.MAX_ACCOUNTS_LIMIT,
-            default = Prefs.DEF_MAX_ACCOUNTS
-        )
+        ) { card ->
+            sliderRow(
+                card,
+                key = Prefs.MAX_ACCOUNTS,
+                title = "最大账号数",
+                summary = "可设置 3 – 16 个账号，默认 6。",
+                min = Prefs.MIN_ACCOUNTS_LIMIT,
+                max = Prefs.MAX_ACCOUNTS_LIMIT,
+                default = Prefs.DEF_MAX_ACCOUNTS
+            )
+        }
     }
 
     private fun buildUiSection() {
-        val card = sectionCard("界面与主题")
-        groupSwitch(
-            card,
-            groupKey = Prefs.ENABLE_UI,
-            title = "启用界面定制",
-            summary = "替换内嵌字体、收起 Stories 入口等界面层面的调整。",
-            risk = Risk.NONE
-        )
-        toggleRow(
-            card,
-            key = Prefs.SYSTEM_FONT,
-            title = "使用系统字体",
-            summary = "把 Telegram 内嵌的 Roboto 字体替换为系统字体，代码块仍保留等宽。",
-            risk = Risk.NONE
-        )
-        toggleRow(
-            card,
-            key = Prefs.HIDE_STORIES,
-            title = "隐藏 Stories",
-            summary = "收起聊天列表顶部的 Stories 环与相关入口。",
-            risk = Risk.NONE
-        )
+        section(
+            sectionTitle = "界面与主题",
+            groupTitle = "启用界面定制",
+            groupSummary = "替换内嵌字体、收起 Stories 入口等界面层面的调整。",
+            groupKey = Prefs.ENABLE_UI
+        ) { card ->
+            switchRow(
+                card,
+                key = Prefs.SYSTEM_FONT,
+                title = "使用系统字体",
+                summary = "把 Telegram 内嵌的 Roboto 字体替换为系统字体，代码块仍保留等宽。"
+            )
+            switchRow(
+                card,
+                key = Prefs.HIDE_STORIES,
+                title = "隐藏 Stories",
+                summary = "收起聊天列表顶部的 Stories 环与相关入口。"
+            )
+        }
     }
 
     private fun buildNetworkSection() {
-        val card = sectionCard("网络")
-        groupSwitch(
-            card,
-            groupKey = Prefs.ENABLE_NET,
-            title = "启用网络增强",
-            summary = "连接与代理相关的行为调整。",
-            risk = Risk.NONE
-        )
-        toggleRow(
-            card,
-            key = Prefs.BLOCK_PROXY_PROBE,
-            title = "阻止代理连通性探测",
-            summary = "Telegram 添加代理前会先发一次不走代理的探测请求，可被用于套取真实出口 IP。开启后跳过该探测。",
-            risk = Risk.MEDIUM,
-            riskMessage = "开启后，设置里的「检查代理」将不再返回延迟测速结果 —— " +
-                "这是为了不再发起那次会暴露真实 IP 的探测。\n\n" +
-                "代理本身仍可正常使用，只是不再预先测速。"
-        )
+        section(
+            sectionTitle = "网络",
+            groupTitle = "启用网络增强",
+            groupSummary = "连接与代理相关的行为调整。",
+            groupKey = Prefs.ENABLE_NET
+        ) { card ->
+            switchRow(
+                card,
+                key = Prefs.BLOCK_PROXY_PROBE,
+                title = "阻止代理连通性探测",
+                summary = "添加代理前 Telegram 会先发一次不走代理的探测请求，存在暴露真实出口 IP 的可能。开启后跳过。",
+                risk = Risk.MEDIUM,
+                riskMessage = "开启后，设置里的「检查代理」将不再返回延迟测速结果 —— " +
+                    "这是为了不再发起那次会暴露真实 IP 的探测。\n\n" +
+                    "代理本身仍可正常使用，只是不再预先测速。"
+            )
+        }
     }
 
     private fun buildPrivacySection() {
-        val card = sectionCard("隐私与本地增强")
-        groupSwitch(
-            card,
-            groupKey = Prefs.ENABLE_PRIVACY,
-            title = "启用隐私增强",
-            summary = "影响消息收发状态的本地行为调整。",
-            risk = Risk.NONE
-        )
-        toggleRow(
-            card,
-            key = Prefs.HIDE_TYPING,
-            title = "隐藏「正在输入 / 录音中」",
-            summary = "不再向对方发送你的输入、录音、上传等实时状态。",
-            risk = Risk.MEDIUM,
-            riskMessage = "开启后对方将完全看不到你正在输入或录音。\n\n" +
-                "这会影响对方的沟通预期，请自行判断是否适合长期开启。"
-        )
-        toggleRow(
-            card,
-            key = Prefs.ANTI_RECALL,
-            title = "防撤回",
-            summary = "对方撤回消息时，拦截该删除请求，消息保留在你的聊天记录中。",
-            risk = Risk.HIGH,
-            riskMessage = "请务必了解以下两点后再开启：\n\n" +
-                "1. 副作用：你自己发起的「为所有人删除」同样会被拦下，也就是你删不掉已发出的消息。\n" +
-                "2. 合规：保留他人撤回的内容可能涉及隐私与取证合规问题，请仅用于个人设备上的正当用途。\n\n" +
-                "确认已理解并愿意承担上述影响？"
-        )
+        section(
+            sectionTitle = "隐私与本地增强",
+            groupTitle = "启用隐私增强",
+            groupSummary = "影响消息收发状态的本地行为调整。",
+            groupKey = Prefs.ENABLE_PRIVACY
+        ) { card ->
+            switchRow(
+                card,
+                key = Prefs.HIDE_TYPING,
+                title = "隐藏「正在输入 / 录音中」",
+                summary = "不再向对方发送你的输入、录音、上传等实时状态。",
+                risk = Risk.MEDIUM,
+                riskMessage = "开启后对方将完全看不到你正在输入或录音。\n\n" +
+                    "这会影响对方的沟通预期，请自行判断是否适合长期开启。"
+            )
+            switchRow(
+                card,
+                key = Prefs.ANTI_RECALL,
+                title = "防撤回",
+                summary = "对方撤回消息时拦截该删除请求，消息保留在你的聊天记录中。",
+                risk = Risk.HIGH,
+                riskMessage = "开启前请先确认两点：\n\n" +
+                    "1. 副作用：你自己发起的「为所有人删除」也可能被拦下，也就是删不掉已发出的消息。\n" +
+                    "2. 合规：保留他人撤回的内容可能涉及隐私与取证合规问题，请仅用于个人设备上的正当用途。\n\n" +
+                    "确认已理解并愿意承担上述影响？"
+            )
+        }
     }
 
     private fun buildDiagSection() {
-        val card = sectionCard("诊断")
-        toggleRow(
-            card,
-            key = Prefs.ENABLE_DIAG,
-            title = "输出诊断日志",
-            summary = "在 Telegram 启动时探测关键 Hook 点是否命中，结果写入 LSPosed 日志，便于适配新版本。",
-            risk = Risk.NONE,
-            default = true
-        )
+        section(
+            sectionTitle = "诊断",
+            groupTitle = "输出诊断日志",
+            groupSummary = "启动时探测关键 Hook 点是否命中，结果写入 LSPosed 日志，便于适配新版本。",
+            groupKey = Prefs.ENABLE_DIAG,
+            groupDefault = true
+        ) { }
     }
 
     private fun buildFooter() {
         root.addView(
-            textView(
-                "查看日志：LSPosed 管理器 → 日志，搜索关键字 TgEnhance，" +
-                    "即可看到「诊断报告」与「Hook 触发统计」两段信息。\n" +
-                    "修改任何设置后，请从最近任务划掉 Telegram 再重新打开。",
-                12f,
-                R.color.text_secondary
-            ).apply { setPadding(dp(8), dp(16), dp(8), 0) }
-        )
-
-        root.addView(
-            Button(this).apply {
-                text = "重置所有设置"
-                setOnClickListener { confirmReset() }
+            TextView(this).apply {
+                text = "查看日志：LSPosed 管理器 → 日志，搜索关键字 TgEnhance，" +
+                    "即可看到「诊断报告」与「Hook 触发统计」两段信息。"
+                textSize = 13f
+                setTextColor(color(R.color.text_secondary))
+                setPadding(dp(16), dp(20), dp(16), 0)
+                setLineSpacing(dp(3).toFloat(), 1f)
             },
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(16) }
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
         )
 
         root.addView(
-            textView("TgEnhance ${appVersionName()}", 11.5f, R.color.text_secondary).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                setPadding(0, dp(14), 0, 0)
+            dangerButton("重置所有设置") { confirmReset() },
+            LinearLayout.LayoutParams(MATCH_PARENT, dp(52)).apply {
+                marginStart = dp(16)
+                marginEnd = dp(16)
+                topMargin = dp(20)
             }
+        )
+
+        root.addView(
+            TextView(this).apply {
+                text = "TgEnhance ${appVersionName()}"
+                textSize = 12f
+                setTextColor(color(R.color.text_secondary))
+                gravity = Gravity.CENTER_HORIZONTAL
+            },
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(16) }
         )
     }
 
@@ -235,79 +290,179 @@ class SettingsActivity : Activity() {
         }
 
     // ------------------------------------------------------------------
-    // 组件构建
+    // 分组骨架
     // ------------------------------------------------------------------
 
-    private fun sectionCard(title: String): LinearLayout {
+    /**
+     * 构建一个 TG 风格分组：分组标题 + 圆角卡片（首行是分组总开关）+ 若干子项。
+     */
+    private fun section(
+        sectionTitle: String,
+        groupTitle: String,
+        groupSummary: String,
+        groupKey: String,
+        groupRisk: Risk = Risk.NONE,
+        groupRiskMessage: String? = null,
+        groupDefault: Boolean = false,
+        content: (LinearLayout) -> Unit
+    ) {
         root.addView(
-            textView(title, 13f, R.color.accent).apply {
-                setTypeface(typeface, Typeface.BOLD)
-                setPadding(dp(4), dp(16), 0, dp(8))
-            }
+            TextView(this).apply {
+                text = sectionTitle
+                textSize = 14f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(color(R.color.accent))
+                setPadding(dp(20), dp(24), dp(16), dp(8))
+            },
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
         )
+
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(color(R.color.card))
-            setPadding(dp(14), dp(4), dp(14), dp(4))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(12).toFloat()
+                setColor(color(R.color.card))
+            }
+            clipToPadding = false
         }
         root.addView(
             card,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                marginStart = dp(16)
+                marginEnd = dp(16)
+            }
         )
-        return card
+
+        switchRow(
+            card,
+            key = groupKey,
+            title = groupTitle,
+            summary = groupSummary,
+            risk = groupRisk,
+            riskMessage = groupRiskMessage,
+            default = groupDefault
+        )
+        content(card)
+        trimTrailingDivider(card)
     }
 
-    /** 分组总开关。 */
-    private fun groupSwitch(
-        parent: LinearLayout,
-        groupKey: String,
-        title: String,
-        summary: String,
-        risk: Risk,
-        riskMessage: String? = null
-    ) {
-        val sw = addSwitchRow(parent, title, summary, prefs.getBoolean(groupKey, false))
-        bindSwitch(sw, groupKey, risk, riskMessage, title)
+    /** 删掉卡片最后一个子项后的多余分割线（TG 分组末尾没有线）。 */
+    private fun trimTrailingDivider(card: LinearLayout) {
+        if (card.childCount == 0) return
+        val last = card.getChildAt(card.childCount - 1)
+        if (last.tag == TAG_DIVIDER) card.removeViewAt(card.childCount - 1)
     }
 
-    /** 子项开关。 */
-    private fun toggleRow(
+    // ------------------------------------------------------------------
+    // 行
+    // ------------------------------------------------------------------
+
+    private fun switchRow(
         parent: LinearLayout,
         key: String,
         title: String,
         summary: String,
-        risk: Risk,
+        risk: Risk = Risk.NONE,
         riskMessage: String? = null,
         default: Boolean = false
     ) {
-        val sw = addSwitchRow(parent, title, summary, prefs.getBoolean(key, default))
-        bindSwitch(sw, key, risk, riskMessage, title)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(11), dp(16), dp(11))
+            minimumHeight = dp(56)
+        }
+
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        texts.addView(rowTitle(title))
+        if (summary.isNotEmpty()) texts.addView(rowSummary(summary))
+        row.addView(texts, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+
+        val sw = TgSwitch(this).apply { isChecked = prefs.getBoolean(key, default) }
+        row.addView(
+            sw,
+            LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(12) }
+        )
+        bindToggle(sw, key, risk, riskMessage, title)
+
+        parent.addView(row)
+        parent.addDivider()
     }
 
-    private fun bindSwitch(
-        sw: Switch,
+    private fun sliderRow(
+        parent: LinearLayout,
+        key: String,
+        title: String,
+        summary: String,
+        min: Int,
+        max: Int,
+        default: Int
+    ) {
+        val current = prefs.getInt(key, default).coerceIn(min, max)
+
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(14))
+        }
+
+        val valueLabel = TextView(this).apply {
+            text = current.toString()
+            textSize = 16f
+            setTextColor(color(R.color.accent))
+            typeface = Typeface.DEFAULT_BOLD
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(rowTitle(title), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        header.addView(valueLabel)
+        box.addView(header)
+        box.addView(rowSummary(summary))
+
+        val bar = tgSeekBar().apply {
+            this.max = max - min
+            progress = current - min
+        }
+        box.addView(
+            bar,
+            LinearLayout.LayoutParams(MATCH_PARENT, dp(26)).apply { topMargin = dp(8) }
+        )
+
+        bar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                val value = min + progress
+                valueLabel.text = value.toString()
+                if (fromUser) prefs.edit().putInt(key, value).apply()
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar) = Unit
+        })
+
+        parent.addView(box)
+        parent.addDivider()
+    }
+
+    /** 绑定开关与配置项；带风险的项在开启前弹确认，取消则静默回滚。 */
+    private fun bindToggle(
+        sw: TgSwitch,
         key: String,
         risk: Risk,
         riskMessage: String?,
         title: String
     ) {
-        sw.setOnCheckedChangeListener { _, isChecked ->
-            if (isChecked && risk != Risk.NONE && !riskMessage.isNullOrBlank()) {
-                confirmRisk(title, riskMessage) { accepted ->
-                    if (accepted) {
-                        prefs.edit().putBoolean(key, true).apply()
-                    } else {
-                        // 回滚，且避免再次触发监听
-                        sw.setOnCheckedChangeListener(null)
-                        sw.isChecked = false
-                        bindSwitch(sw, key, risk, riskMessage, title)
-                    }
+        sw.onCheckedChangeListener = { checked ->
+            val message = riskMessage
+            if (checked && risk != Risk.NONE && !message.isNullOrBlank()) {
+                confirmRisk(title, message) { accepted ->
+                    if (accepted) prefs.edit().putBoolean(key, true).apply()
+                    else sw.isChecked = false
                 }
             } else {
-                prefs.edit().putBoolean(key, isChecked).apply()
+                prefs.edit().putBoolean(key, checked).apply()
             }
         }
     }
@@ -332,121 +487,108 @@ class SettingsActivity : Activity() {
             .show()
     }
 
-    /** 数值调节行（SeekBar）。 */
-    private fun intRow(
-        parent: LinearLayout,
-        key: String,
-        title: String,
-        summary: String,
-        min: Int,
-        max: Int,
-        default: Int
-    ) {
-        val current = prefs.getInt(key, default).coerceIn(min, max)
+    // ------------------------------------------------------------------
+    // 组件构建
+    // ------------------------------------------------------------------
 
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(12), 0, dp(12))
-        }
-
-        val valueLabel = textView(current.toString(), 15f, R.color.accent).apply {
-            setTypeface(typeface, Typeface.BOLD)
-        }
-
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        header.addView(
-            textView(title, 15f, R.color.text_primary),
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        )
-        header.addView(valueLabel)
-
-        box.addView(header)
-        box.addView(
-            textView(summary, 12.5f, R.color.text_secondary).apply {
-                setPadding(0, dp(2), 0, dp(8))
-            }
-        )
-
-        val seek = SeekBar(this).apply {
-            this.max = max - min
-            progress = current - min
-        }
-        box.addView(seek)
-
-        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(bar: SeekBar, progress: Int, fromUser: Boolean) {
-                val value = min + progress
-                valueLabel.text = value.toString()
-                if (fromUser) prefs.edit().putInt(key, value).apply()
-            }
-
-            override fun onStartTrackingTouch(bar: SeekBar) = Unit
-            override fun onStopTrackingTouch(bar: SeekBar) = Unit
-        })
-
-        parent.addView(box)
-        parent.addView(divider())
+    private fun rowTitle(text: String): TextView = TextView(this).apply {
+        this.text = text
+        textSize = 16f
+        setTextColor(color(R.color.text_primary))
+        setLineSpacing(dp(2).toFloat(), 1f)
     }
 
-    private fun addSwitchRow(
-        parent: LinearLayout,
-        title: String,
-        summary: String,
-        checked: Boolean
-    ): Switch {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(12), 0, dp(12))
-        }
-
-        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        texts.addView(textView(title, 15f, R.color.text_primary))
-        texts.addView(
-            textView(summary, 12.5f, R.color.text_secondary).apply {
-                setPadding(0, dp(2), dp(8), 0)
-            }
-        )
-
-        row.addView(
-            texts,
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        )
-
-        val sw = Switch(this).apply { isChecked = checked }
-        row.addView(sw)
-
-        parent.addView(row)
-        parent.addView(divider())
-        return sw
+    private fun rowSummary(text: String): TextView = TextView(this).apply {
+        this.text = text
+        textSize = 13f
+        setTextColor(color(R.color.text_secondary))
+        setPadding(0, dp(3), 0, 0)
+        setLineSpacing(dp(3).toFloat(), 1f)
     }
 
-    private fun divider(): View = View(this).apply {
-        setBackgroundColor(color(R.color.divider))
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(1)
+    private fun LinearLayout.addDivider() {
+        addView(
+            View(this@SettingsActivity).apply {
+                tag = TAG_DIVIDER
+                setBackgroundColor(color(R.color.divider))
+            },
+            LinearLayout.LayoutParams(MATCH_PARENT, hairline()).apply { marginStart = dp(16) }
         )
+    }
+
+    /** 细轨道 + 圆形滑块，对齐 TG 设置页里的滑条。 */
+    private fun tgSeekBar(): SeekBar {
+        val trackOff = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(2).toFloat()
+            setColor(color(R.color.switch_off))
+        }
+        val trackOn = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(2).toFloat()
+            setColor(color(R.color.accent))
+        }
+        val inset = dp(9)
+        val layers = LayerDrawable(arrayOf(trackOff, trackOn)).apply {
+            setId(0, android.R.id.background)
+            setId(1, android.R.id.progress)
+            setLayerHeight(0, dp(4))
+            setLayerHeight(1, dp(4))
+            setLayerGravity(0, Gravity.CENTER_VERTICAL)
+            setLayerGravity(1, Gravity.CENTER_VERTICAL)
+            // 两端缩进滑块半径，滑块到端点时不会被轨道边框压住
+            setLayerInset(0, inset, 0, inset, 0)
+            setLayerInset(1, inset, 0, inset, 0)
+        }
+        val thumb = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(color(R.color.accent))
+            setSize(dp(18), dp(18))
+        }
+        return SeekBar(this).apply {
+            progressDrawable = layers
+            this.thumb = thumb
+            thumbOffset = 0
+            splitTrack = false
+        }
+    }
+
+    private fun dangerButton(text: String, onClick: () -> Unit): TextView {
+        val shape = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(12).toFloat()
+            setColor(color(R.color.card))
+        }
+        return TextView(this).apply {
+            this.text = text
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setTextColor(color(R.color.danger))
+            typeface = Typeface.DEFAULT_BOLD
+            background = RippleDrawable(ColorStateList.valueOf(color(R.color.ripple)), shape, null)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+        }
     }
 
     // ------------------------------------------------------------------
     // 小工具
     // ------------------------------------------------------------------
 
-    private fun textView(text: String, sizeSp: Float, colorRes: Int): TextView =
-        TextView(this).apply {
-            this.text = text
-            textSize = sizeSp
-            setTextColor(color(colorRes))
-            setLineSpacing(dp(3).toFloat(), 1f)
-        }
-
     private fun color(res: Int): Int = getColor(res)
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    /** 1px 级别的分割线；高密度屏上 dp(1) 会变成 3px，太粗。 */
+    private fun hairline(): Int =
+        (resources.displayMetrics.density * 0.7f).toInt().coerceAtLeast(1)
+
     private val prefs get() = Prefs.requireAppPrefs()
+
+    private companion object {
+        const val MATCH_PARENT = ViewGroup.LayoutParams.MATCH_PARENT
+        const val WRAP_CONTENT = ViewGroup.LayoutParams.WRAP_CONTENT
+        const val TAG_DIVIDER = "divider"
+    }
 }
