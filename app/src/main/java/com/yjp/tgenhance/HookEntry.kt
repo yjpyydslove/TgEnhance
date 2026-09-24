@@ -2,6 +2,7 @@ package com.yjp.tgenhance
 
 import android.app.AndroidAppHelper
 import android.os.Handler
+import com.yjp.tgenhance.XLog.guard
 import com.yjp.tgenhance.diag.DiagBridge
 import com.yjp.tgenhance.diag.Diagnostics
 import com.yjp.tgenhance.diag.HookStats
@@ -96,17 +97,21 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
 
         XposedBridge.hookAllMethods(target, "onResume", object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
-                HookStats.hit("prefs.reload")
-                Prefs.reload()
-                DiagBridge.broadcast()
+                guard("配置热更新") {
+                    HookStats.hit("prefs.reload")
+                    Prefs.reload()
+                    DiagBridge.broadcast()
+                }
             }
         })
 
         XposedBridge.hookAllMethods(target, "onPause", object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
-                DiagBridge.broadcast()
-                // 补发一次：此刻模块设置界面可能刚启动、接收器还没注册好
-                scheduleDelayedBroadcast(param.thisObject)
+                guard("诊断回传") {
+                    DiagBridge.broadcast()
+                    // 补发一次：此刻模块设置界面可能刚启动、接收器还没注册好
+                    scheduleDelayedBroadcast(param.thisObject)
+                }
             }
         })
 

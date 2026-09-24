@@ -96,9 +96,16 @@ object NetworkHooks {
                 XposedBridge.hookMethod(method, object : XC_MethodReplacement() {
                     override fun replaceHookedMethod(param: MethodHookParam): Any? {
                         if (!Prefs.netEnabled || !Prefs.blockAutoDownload) return invokeOriginal(param)
-                        if (isSponsored(param)) return invokeOriginal(param)
-                        HookStats.hit("net.autoDownload.blocked")
-                        return false
+                        return try {
+                            if (isSponsored(param)) invokeOriginal(param)
+                            else {
+                                HookStats.hit("net.autoDownload.blocked")
+                                false
+                            }
+                        } catch (t: Throwable) {
+                            XLog.e("[阻止自动下载] 回调异常，本次放行", t)
+                            invokeOriginal(param)
+                        }
                     }
                 })
             }

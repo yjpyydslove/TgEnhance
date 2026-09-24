@@ -154,9 +154,11 @@ object ThemeHooks {
             for (method in targets) {
                 XposedBridge.hookMethod(method, object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
-                        if (!Prefs.uiEnabled || !Prefs.hideStories) return
-                        HookStats.hit("ui.stories")
-                        param.result = false
+                        guard("隐藏 Stories") {
+                            if (!Prefs.uiEnabled || !Prefs.hideStories) return@guard
+                            HookStats.hit("ui.stories")
+                            param.result = false
+                        }
                     }
                 })
             }
