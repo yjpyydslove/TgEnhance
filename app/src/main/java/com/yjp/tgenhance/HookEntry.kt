@@ -230,7 +230,20 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
      */
     private fun isTelegramClient(lpparam: XC_LoadPackage.LoadPackageParam): Boolean {
         if (lpparam.packageName == Prefs.MODULE_PKG) return false
-        return try {
+
+        // Telegram X 用的是另一套架构（org.thunderdog.challegram），
+        // 本模块的 Hook 点一个都对不上。此前是静默 return false，
+        // 用户只会看到「模块完全没反应」，现在明确说清楚。
+        val pkg = lpparam.packageName.lowercase()
+        if (pkg.contains("challegram") || pkg.contains("thunderdog")) {
+            XLog.w(
+                "[客户端] 检测到 Telegram X（${lpparam.packageName}）：" +
+                    "它使用另一套界面架构，本模块的 Hook 点不适用，已跳过挂载。"
+            )
+            return false
+        }
+
+        val hasUserConfig = try {
             XposedHelpers.findClassIfExists(
                 "org.telegram.messenger.UserConfig",
                 lpparam.classLoader
@@ -238,6 +251,16 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         } catch (t: Throwable) {
             false
         }
+
+        // 包名看着像 Telegram 系、但核心类不存在 —— 可能是没勾作用域的其它 proess，
+        // 也可能是我们没见过的架构。两者都值得留一行日志，而不是安静地走开。
+        if (!hasUserConfig && (pkg.contains("telegram") || pkg.contains("gram"))) {
+            XLog.w(
+                "[客户端] ${lpparam.packageName} 看起来是 Telegram 系，但未找到核心类 " +
+                    "org.telegram.messenger.UserConfig，已跳过（若是主客户端，请检查 LSPosed 作用域）"
+            )
+        }
+        return hasUserConfig
     }
 
     private companion object {
