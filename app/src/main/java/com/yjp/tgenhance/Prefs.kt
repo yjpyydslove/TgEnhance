@@ -3,6 +3,7 @@ package com.yjp.tgenhance
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.SystemClock
+import com.yjp.tgenhance.core.Features
 import de.robv.android.xposed.XSharedPreferences
 import java.util.UUID
 
@@ -77,15 +78,11 @@ object Prefs {
     /**
      * 全部布尔配置项。
      *
-     * 同时服务于三处：内存快照 [refreshSnapshot]、导入导出、以及「关闭全部功能」。
-     * 新增开关时**务必加进来** —— 漏了会导致该项在快照里查不到，只能回退直读文件。
+     * v3.0.0 起直接从 [Features] 注册表派生 —— 早先是手写第二份清单，
+     * 新增开关时忘记同步就会导致该项进不了内存快照，只能回退直读文件。
+     * 现在结构上不可能漏。
      */
-    private val ALL_BOOLEAN_KEYS = listOf(
-        ENABLE_ACCOUNT, ENABLE_UI, SYSTEM_FONT, HIDE_STORIES,
-        ENABLE_NET, BLOCK_PROXY_PROBE, BLOCK_AUTO_DOWNLOAD,
-        ENABLE_PRIVACY, ANTI_RECALL, HIDE_TYPING, BLOCK_READ_RECEIPT, HIDE_ONLINE,
-        ENABLE_DIAG,
-    )
+    private val ALL_BOOLEAN_KEYS: List<String> get() = Features.ALL.map { it.key }
 
     private val ALL_INT_KEYS = listOf(MAX_ACCOUNTS, NET_TIMEOUT_SCALE)
 

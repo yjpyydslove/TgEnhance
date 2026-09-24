@@ -26,6 +26,9 @@ import android.widget.TextView
 import android.widget.Toast
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.R
+import com.yjp.tgenhance.core.FeatureGroup
+import com.yjp.tgenhance.core.Features
+import com.yjp.tgenhance.core.RiskLevel
 import com.yjp.tgenhance.diag.DiagProtocol
 
 /**
@@ -45,8 +48,6 @@ import com.yjp.tgenhance.diag.DiagProtocol
  * 用户确认后才写入配置；取消则把开关状态静默回滚。
  */
 class SettingsActivity : Activity() {
-
-    private enum class Risk { NONE, MEDIUM, HIGH }
 
     private lateinit var root: LinearLayout
 
@@ -96,12 +97,8 @@ class SettingsActivity : Activity() {
         setContentView(scroll)
 
         buildHeader()
-        buildAccountSection()
-        buildUiSection()
-        buildNetworkSection()
-        buildPrivacySection()
+        buildFeatureSections()
         buildPresetSection()
-        buildDiagSection()
         buildStatusSection()
         buildFooter()
     }
@@ -186,129 +183,55 @@ class SettingsActivity : Activity() {
         )
     }
 
-    private fun buildAccountSection() {
-        section(
-            sectionTitle = "多账号",
-            groupTitle = "启用多账号上限提升",
-            groupSummary = "解锁 Telegram 原生限制：免费版 3 个、会员版 5 个账号。",
-            groupKey = Prefs.ENABLE_ACCOUNT,
-            groupRisk = Risk.MEDIUM,
-            groupRiskMessage = "该功能会扩容 Telegram 内部的账号实例数组。\n\n" +
-                "在少数版本上，超出原生上限的账号可能出现同步异常或不稳定。\n" +
-                "建议先用默认值 6 观察一段时间，确认稳定后再继续上调。"
-        ) { card ->
-            sliderRow(
-                card,
-                key = Prefs.MAX_ACCOUNTS,
-                title = "最大账号数",
-                summary = "可设置 3 – 16 个账号，默认 6。",
-                min = Prefs.MIN_ACCOUNTS_LIMIT,
-                max = Prefs.MAX_ACCOUNTS_LIMIT,
-                default = Prefs.DEF_MAX_ACCOUNTS
-            )
-        }
-    }
+    /**
+     * 按注册表生成全部分组。
+     *
+     * v3.0.0 起界面不再手写：分组标题、开关行、说明文案、风险等级全部来自
+     * [Features.ALL]。新增一个功能只需在注册表里加一条声明 —— 界面、配置清单、
+     * 风险确认、关闭全部功能会同时跟上，不存在「改了三处漏一处」的可能。
+     *
+     * 唯一保留的特殊处理是「最大账号数」这个数值行：它是多账号组内的滑条，
+     * 与布尔开关不是同一类控件。
+     */
+    private fun buildFeatureSections() {
+        for (group in FeatureGroup.entries) {
+            val specs = Features.byGroup[group] ?: continue
+            if (specs.isEmpty()) continue
 
-    private fun buildUiSection() {
-        section(
-            sectionTitle = "界面与主题",
-            groupTitle = "启用界面定制",
-            groupSummary = "替换内嵌字体、收起 Stories 入口等界面层面的调整。",
-            groupKey = Prefs.ENABLE_UI
-        ) { card ->
-            switchRow(
-                card,
-                key = Prefs.SYSTEM_FONT,
-                title = "使用系统字体",
-                summary = "把 Telegram 内嵌的 Roboto 字体替换为系统字体，代码块仍保留等宽。"
+            root.addView(
+                sectionTitleView(group.title),
+                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
             )
-            switchRow(
-                card,
-                key = Prefs.HIDE_STORIES,
-                title = "隐藏 Stories",
-                summary = "收起聊天列表顶部的 Stories 环与相关入口。"
-            )
-        }
-    }
 
-    private fun buildNetworkSection() {
-        section(
-            sectionTitle = "网络",
-            groupTitle = "启用网络增强",
-            groupSummary = "连接与代理相关的行为调整。",
-            groupKey = Prefs.ENABLE_NET
-        ) { card ->
-            switchRow(
-                card,
-                key = Prefs.BLOCK_PROXY_PROBE,
-                title = "阻止代理连通性探测",
-                summary = "添加代理前 Telegram 会先发一次不走代理的探测请求，存在暴露真实出口 IP 的可能。开启后跳过。",
-                risk = Risk.MEDIUM,
-                riskMessage = "开启后，设置里的「检查代理」将不再返回延迟测速结果 —— " +
-                    "这是为了不再发起那次会暴露真实 IP 的探测。\n\n" +
-                    "代理本身仍可正常使用，只是不再预先测速。"
-            )
-            switchRow(
-                card,
-                key = Prefs.BLOCK_AUTO_DOWNLOAD,
-                title = "阻止媒体自动下载",
-                summary = "收到的图片、视频、文件不再自动下载，只在手动点击时才下 —— 省流量。",
-                risk = Risk.NONE
-            )
-        }
-    }
+            val card = cardView()
+            root.addView(card, cardParams())
 
-    private fun buildPrivacySection() {
-        section(
-            sectionTitle = "隐私与本地增强",
-            groupTitle = "启用隐私增强",
-            groupSummary = "影响消息收发状态的本地行为调整。",
-            groupKey = Prefs.ENABLE_PRIVACY
-        ) { card ->
-            switchRow(
-                card,
-                key = Prefs.HIDE_TYPING,
-                title = "隐藏「正在输入 / 录音中」",
-                summary = "不再向对方发送你的输入、录音、上传等实时状态。",
-                risk = Risk.MEDIUM,
-                riskMessage = "开启后对方将完全看不到你正在输入或录音。\n\n" +
-                    "这会影响对方的沟通预期，请自行判断是否适合长期开启。"
-            )
-            switchRow(
-                card,
-                key = Prefs.ANTI_RECALL,
-                title = "防撤回",
-                summary = "对方撤回消息时拦截该删除请求，消息保留在你的聊天记录中。",
-                risk = Risk.HIGH,
-                riskMessage = "开启前请先确认两点：\n\n" +
-                    "1. 副作用：你自己发起的「为所有人删除」也可能被拦下，也就是删不掉已发出的消息。\n" +
-                    "2. 合规：保留他人撤回的内容可能涉及隐私与取证合规问题，请仅用于个人设备上的正当用途。\n\n" +
-                    "确认已理解并愿意承担上述影响？"
-            )
-            switchRow(
-                card,
-                key = Prefs.BLOCK_READ_RECEIPT,
-                title = "不上报已读回执",
-                summary = "读完消息不向服务器发送已读位置，对方看不到你的已读状态。",
-                risk = Risk.HIGH,
-                riskMessage = "开启后，对方永远看不到你读过消息（群里的已读人数也不会增加）。\n\n" +
-                    "需要注意：\n" +
-                    "1. 服务器侧仍认为这些消息未读，换设备或重新登录时可能重新出现未读标记。\n" +
-                    "2. 频道/群组的未读计数会在服务器侧累积。\n\n" +
-                    "本地依然照常标记为已读，不影响你自己看消息。\n\n" +
-                    "确认开启？"
-            )
-            switchRow(
-                card,
-                key = Prefs.HIDE_ONLINE,
-                title = "隐藏在线状态",
-                summary = "不向服务器上报「我在线」，对方看到你一直是离线状态。",
-                risk = Risk.MEDIUM,
-                riskMessage = "开启后，任何人（含联系人、群成员）都看不到你在线，" +
-                    "只会看到「最后上线」停在你开启这项功能之前的某个时间点。\n\n" +
-                    "这会影响别人对你的回复预期 —— 对方可能以为你一直没看手机。\n\n" +
-                    "确认开启？"
-            )
+            for (spec in specs) {
+                switchRow(
+                    card,
+                    key = spec.key,
+                    title = spec.title,
+                    summary = spec.summary,
+                    risk = spec.risk,
+                    riskMessage = spec.riskMessage,
+                    default = spec.default
+                )
+
+                if (spec.key == Prefs.ENABLE_ACCOUNT) {
+                    sliderRow(
+                        card,
+                        key = Prefs.MAX_ACCOUNTS,
+                        title = "最大账号数",
+                        summary = "可设置 ${Prefs.MIN_ACCOUNTS_LIMIT} – ${Prefs.MAX_ACCOUNTS_LIMIT} " +
+                            "个账号，默认 ${Prefs.DEF_MAX_ACCOUNTS}。",
+                        min = Prefs.MIN_ACCOUNTS_LIMIT,
+                        max = Prefs.MAX_ACCOUNTS_LIMIT,
+                        default = Prefs.DEF_MAX_ACCOUNTS
+                    )
+                }
+            }
+
+            trimTrailingDivider(card)
         }
     }
 
@@ -364,16 +287,6 @@ class SettingsActivity : Activity() {
         actionRow(card, "关闭全部功能", danger = true) { confirmDisableAll() }
 
         trimTrailingDivider(card)
-    }
-
-    private fun buildDiagSection() {
-        section(
-            sectionTitle = "诊断",
-            groupTitle = "输出诊断日志",
-            groupSummary = "启动时探测关键 Hook 点是否命中，结果写入 LSPosed 日志，便于适配新版本。",
-            groupKey = Prefs.ENABLE_DIAG,
-            groupDefault = true
-        ) { }
     }
 
     /**
@@ -571,7 +484,7 @@ class SettingsActivity : Activity() {
             .setMessage("将关闭所有增强开关（诊断日志除外），配置项本身保留。\n\n随时可以再打开。")
             .setPositiveButton("全部关闭") { _, _ ->
                 val editor = prefs.edit()
-                for (key in ALL_FEATURE_KEYS) editor.putBoolean(key, false)
+                for (key in Features.disableAllKeys) editor.putBoolean(key, false)
                 editor.apply()
                 toast("已关闭全部功能")
                 recreate()
@@ -606,7 +519,7 @@ class SettingsActivity : Activity() {
             return
         }
 
-        val risky = RISKY_KEYS.filterKeys { raw.contains("$it=1") }.values.toList()
+        val risky = Features.riskyTitles.filterKeys { raw.contains("$it=1") }.values.toList()
         if (risky.isEmpty()) {
             doImport(raw)
             return
@@ -686,42 +599,8 @@ class SettingsActivity : Activity() {
         }
 
     // ------------------------------------------------------------------
-    // 分组骨架
+    // 行
     // ------------------------------------------------------------------
-
-    /**
-     * 构建一个 TG 风格分组：分组标题 + 圆角卡片（首行是分组总开关）+ 若干子项。
-     */
-    private fun section(
-        sectionTitle: String,
-        groupTitle: String,
-        groupSummary: String,
-        groupKey: String,
-        groupRisk: Risk = Risk.NONE,
-        groupRiskMessage: String? = null,
-        groupDefault: Boolean = false,
-        content: (LinearLayout) -> Unit
-    ) {
-        root.addView(
-            sectionTitleView(sectionTitle),
-            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-        )
-
-        val card = cardView()
-        root.addView(card, cardParams())
-
-        switchRow(
-            card,
-            key = groupKey,
-            title = groupTitle,
-            summary = groupSummary,
-            risk = groupRisk,
-            riskMessage = groupRiskMessage,
-            default = groupDefault
-        )
-        content(card)
-        trimTrailingDivider(card)
-    }
 
     /** 删掉卡片最后一个子项后的多余分割线（TG 分组末尾没有线）。 */
     private fun trimTrailingDivider(card: LinearLayout) {
@@ -730,16 +609,12 @@ class SettingsActivity : Activity() {
         if (last.tag == TAG_DIVIDER) card.removeViewAt(card.childCount - 1)
     }
 
-    // ------------------------------------------------------------------
-    // 行
-    // ------------------------------------------------------------------
-
     private fun switchRow(
         parent: LinearLayout,
         key: String,
         title: String,
         summary: String,
-        risk: Risk = Risk.NONE,
+        risk: RiskLevel = RiskLevel.NONE,
         riskMessage: String? = null,
         default: Boolean = false
     ) {
@@ -826,13 +701,13 @@ class SettingsActivity : Activity() {
     private fun bindToggle(
         sw: TgSwitch,
         key: String,
-        risk: Risk,
+        risk: RiskLevel,
         riskMessage: String?,
         title: String
     ) {
         sw.onCheckedChangeListener = { checked ->
             val message = riskMessage
-            if (checked && risk != Risk.NONE && !message.isNullOrBlank()) {
+            if (checked && risk != RiskLevel.NONE && !message.isNullOrBlank()) {
                 confirmRisk(title, message) { accepted ->
                     if (accepted) prefs.edit().putBoolean(key, true).apply()
                     else sw.isChecked = false
@@ -994,27 +869,9 @@ class SettingsActivity : Activity() {
         const val TAG_DIVIDER = "divider"
         const val CLIP_LABEL = "TgEnhance 配置"
 
-        /** 「关闭全部功能」覆盖的开关（诊断日志不动）。 */
-        val ALL_FEATURE_KEYS = listOf(
-            Prefs.ENABLE_ACCOUNT, Prefs.ENABLE_UI, Prefs.SYSTEM_FONT, Prefs.HIDE_STORIES,
-            Prefs.ENABLE_NET, Prefs.BLOCK_PROXY_PROBE, Prefs.BLOCK_AUTO_DOWNLOAD,
-            Prefs.ENABLE_PRIVACY, Prefs.ANTI_RECALL, Prefs.HIDE_TYPING,
-            Prefs.BLOCK_READ_RECEIPT, Prefs.HIDE_ONLINE,
-        )
-
-        /**
-         * 带副作用的功能开关。
-         *
-         * 导入配置时必须逐项确认 —— 否则贴一段文本就能绕过「开启风险功能需确认」，
-         * 前面所有风险提示都成了摆设。
-         */
-        val RISKY_KEYS = mapOf(
-            Prefs.ANTI_RECALL to "防撤回",
-            Prefs.HIDE_TYPING to "隐藏「正在输入 / 录音中」",
-            Prefs.BLOCK_READ_RECEIPT to "不上报已读回执",
-            Prefs.HIDE_ONLINE to "隐藏在线状态",
-            Prefs.ENABLE_ACCOUNT to "多账号上限提升",
-        )
+        // 「关闭全部功能」的 key 清单、以及「导入时需要风险确认的 key 清单」，
+        // v3.0.0 起一律从 Features 注册表派生（Features.disableAllKeys /
+        // Features.riskyTitles）。此处不再维护第二份 —— 两份清单迟早会不一致。
 
         /** hook 点 -> 用户可读名称。新增 hook 点时记得同步，否则界面会显示原始 key。 */
         val HOOK_LABELS = mapOf(
