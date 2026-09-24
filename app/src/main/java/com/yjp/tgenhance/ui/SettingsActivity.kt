@@ -3,6 +3,8 @@ package com.yjp.tgenhance.ui
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.BroadcastReceiver
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -98,6 +100,7 @@ class SettingsActivity : Activity() {
         buildUiSection()
         buildNetworkSection()
         buildPrivacySection()
+        buildPresetSection()
         buildDiagSection()
         buildStatusSection()
         buildFooter()
@@ -291,6 +294,60 @@ class SettingsActivity : Activity() {
         }
     }
 
+    /**
+     * 「快捷配置」卡片。
+     *
+     * 预设刻意只组合**低风险**项：带副作用的开关（防撤回、隐藏输入状态、
+     * 不上报已读）一律不放进预设，必须由用户单独开启并确认 ——
+     * 一键把有代价的功能全打开，不符合本模块的风险提示原则。
+     */
+    private fun buildPresetSection() {
+        root.addView(
+            sectionTitleView("快捷配置"),
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+        )
+
+        val card = cardView()
+        root.addView(card, cardParams())
+
+        actionRow(card, "界面清爽：系统字体 + 隐藏 Stories") {
+            applyPreset(
+                "界面清爽",
+                listOf(
+                    Prefs.ENABLE_UI to true,
+                    Prefs.SYSTEM_FONT to true,
+                    Prefs.HIDE_STORIES to true
+                )
+            )
+        }
+
+        actionRow(card, "网络防护：阻止代理连通性探测") {
+            applyPreset(
+                "网络防护",
+                listOf(
+                    Prefs.ENABLE_NET to true,
+                    Prefs.BLOCK_PROXY_PROBE to true
+                )
+            )
+        }
+
+        actionRow(card, "多账号：启用并设为 6 个") {
+            applyPreset(
+                "多账号",
+                listOf(
+                    Prefs.ENABLE_ACCOUNT to true,
+                    Prefs.MAX_ACCOUNTS to Prefs.DEF_MAX_ACCOUNTS
+                )
+            )
+        }
+
+        actionRow(card, "导出配置到剪贴板") { exportToClipboard() }
+        actionRow(card, "从剪贴板导入配置") { importFromClipboard() }
+        actionRow(card, "关闭全部功能", danger = true) { confirmDisableAll() }
+
+        trimTrailingDivider(card)
+    }
+
     private fun buildDiagSection() {
         section(
             sectionTitle = "诊断",
@@ -410,6 +467,145 @@ class SettingsActivity : Activity() {
             },
             LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(16) }
         )
+    }
+
+    // ------------------------------------------------------------------
+    // 快捷配置
+    // ------------------------------------------------------------------
+
+    /** 卡片内的可点行：TG 风格的做法是主色文字、整行可点、带水波纹。 */
+    private fun actionRow(
+        parent: LinearLayout,
+        title: String,
+        danger: Boolean = false,
+        onClick: () -> Unit
+    ) {
+        val row = TextView(this).apply {
+            text = title
+            textSize = 16f
+            gravity = Gravity.CENTER_VERTICAL
+            setTextColor(color(if (danger) R.color.danger else R.color.accent))
+            setPadding(dp(16), dp(15), dp(16), dp(15))
+            isClickable = true
+            isFocusable = true
+            background = RippleDrawable(ColorStateList.valueOf(color(R.color.ripple)), null, null)
+            setOnClickListener { onClick() }
+        }
+        parent.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        parent.addDivider()
+    }
+
+    private fun applyPreset(name: String, entries: List<Pair<String, Any>>) {
+        val editor = prefs.edit()
+        for ((key, value) in entries) {
+            when (value) {
+                is Boolean -> editor.putBoolean(key, value)
+                is Int -> editor.putInt(key, value)
+            }
+        }
+        editor.apply()
+        toast("已应用：$name")
+        recreate()
+    }
+
+    private fun confirmDisableAll() {
+        AlertDialog.Builder(this)
+            .setTitle("关闭全部功能")
+            .setMessage("将关闭所有增强开关（诊断日志除外），配置项本身保留。\n\n随时可以再打开。")
+            .setPositiveButton("全部关闭") { _, _ ->
+                val editor = prefs.edit()
+                for (key in ALL_FEATURE_KEYS) editor.putBoolean(key, false)
+                editor.apply()
+                toast("已关闭全部功能")
+                recreate()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun exportToClipboard() {
+        val text = Prefs.exportFrom(prefs)
+        if (!copyToClipboard(text)) {
+            toast("复制失败，请检查剪贴板权限")
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("配置已复制")
+            .setMessage("已复制到剪贴板，粘贴出来即可保存，或传到另一台设备导入。\n\n$text")
+            .setPositiveButton("好", null)
+            .show()
+    }
+
+    /**
+     * 从剪贴板导入配置。
+     *
+     * 注意：**导入同样要过风险确认**。否则用户贴一段文本就能绕过
+     * 「开启风险功能需确认」的约束，前面所有风险提示等于白做。
+     */
+    private fun importFromClipboard() {
+        val raw = readClipboard()
+        if (raw.isNullOrBlank()) {
+            toast("剪贴板为空")
+            return
+        }
+
+        val risky = RISKY_KEYS.filterKeys { raw.contains("$it=1") }.values.toList()
+        if (risky.isEmpty()) {
+            doImport(raw)
+            return
+        }
+
+        confirmRisk(
+            "导入的配置包含风险功能",
+            "这段配置里开启了以下带副作用的功能：\n\n" +
+                risky.joinToString("\n") { "· $it" } + "\n\n" +
+                "各功能的具体影响请见上方对应开关的说明。确认按这段配置导入？"
+        ) { accepted ->
+            if (accepted) doImport(raw)
+        }
+    }
+
+    private fun doImport(raw: String) {
+        val applied = Prefs.importTo(prefs, raw)
+        if (applied < 0) {
+            AlertDialog.Builder(this)
+                .setTitle("导入失败")
+                .setMessage(
+                    "剪贴板里的内容不是本模块导出的配置格式。\n\n" +
+                        "请确认复制的是「导出配置到剪贴板」得到的那段文本。"
+                )
+                .setPositiveButton("好", null)
+                .show()
+            return
+        }
+        toast("已导入 $applied 项")
+        recreate()
+    }
+
+    private fun copyToClipboard(text: String): Boolean = try {
+        val cm = getSystemService(ClipboardManager::class.java)
+        if (cm == null) false else {
+            cm.setPrimaryClip(ClipData.newPlainText(CLIP_LABEL, text))
+            true
+        }
+    } catch (t: Throwable) {
+        false
+    }
+
+    private fun readClipboard(): String? = try {
+        val cm = getSystemService(ClipboardManager::class.java)
+        val clip = cm?.primaryClip
+        if (clip != null && clip.itemCount > 0) {
+            clip.getItemAt(0).coerceToText(this).toString()
+        } else {
+            null
+        }
+    } catch (t: Throwable) {
+        null
+    }
+
+    private fun toast(msg: String) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
     private fun confirmReset() {
@@ -739,6 +935,27 @@ class SettingsActivity : Activity() {
         const val MATCH_PARENT = ViewGroup.LayoutParams.MATCH_PARENT
         const val WRAP_CONTENT = ViewGroup.LayoutParams.WRAP_CONTENT
         const val TAG_DIVIDER = "divider"
+        const val CLIP_LABEL = "TgEnhance 配置"
+
+        /** 「关闭全部功能」覆盖的开关（诊断日志不动）。 */
+        val ALL_FEATURE_KEYS = listOf(
+            Prefs.ENABLE_ACCOUNT, Prefs.ENABLE_UI, Prefs.SYSTEM_FONT, Prefs.HIDE_STORIES,
+            Prefs.ENABLE_NET, Prefs.BLOCK_PROXY_PROBE,
+            Prefs.ENABLE_PRIVACY, Prefs.ANTI_RECALL, Prefs.HIDE_TYPING, Prefs.BLOCK_READ_RECEIPT,
+        )
+
+        /**
+         * 带副作用的功能开关。
+         *
+         * 导入配置时必须逐项确认 —— 否则贴一段文本就能绕过「开启风险功能需确认」，
+         * 前面所有风险提示都成了摆设。
+         */
+        val RISKY_KEYS = mapOf(
+            Prefs.ANTI_RECALL to "防撤回",
+            Prefs.HIDE_TYPING to "隐藏「正在输入 / 录音中」",
+            Prefs.BLOCK_READ_RECEIPT to "不上报已读回执",
+            Prefs.ENABLE_ACCOUNT to "多账号上限提升",
+        )
 
         /** hook 点 -> 用户可读名称。新增 hook 点时记得同步，否则界面会显示原始 key。 */
         val HOOK_LABELS = mapOf(

@@ -174,4 +174,71 @@ object Prefs {
 
     /** hook 侧读取回传令牌；为空说明用户还没打开过设置界面。 */
     val diagToken: String get() = hookString(DIAG_TOKEN, "")
+
+    // ---------------- 配置导入 / 导出 ----------------
+
+    /**
+     * 导出格式的标识前缀。
+     *
+     * 明文 `key=value;` 逐项拼接，不做 Base64 —— 用户可能想手工改一两项再导入，
+     * 也可能要贴到聊天里同步到另一台设备，可读比紧凑更重要。
+     */
+    private const val CONFIG_PREFIX = "TGE1:"
+
+    /** 参与导入导出的布尔项。 */
+    private val BOOLEAN_KEYS = listOf(
+        ENABLE_ACCOUNT, ENABLE_UI, SYSTEM_FONT, HIDE_STORIES,
+        ENABLE_NET, BLOCK_PROXY_PROBE,
+        ENABLE_PRIVACY, ANTI_RECALL, HIDE_TYPING, BLOCK_READ_RECEIPT,
+        ENABLE_DIAG,
+    )
+
+    /** 参与导入导出的数值项。 */
+    private val INT_KEYS = listOf(MAX_ACCOUNTS)
+
+    /** 序列化当前配置。 */
+    fun exportFrom(p: SharedPreferences): String = buildString {
+        append(CONFIG_PREFIX)
+        for (key in BOOLEAN_KEYS) {
+            append(key).append('=').append(if (p.getBoolean(key, false)) 1 else 0).append(';')
+        }
+        for (key in INT_KEYS) {
+            append(key).append('=').append(p.getInt(key, DEF_MAX_ACCOUNTS)).append(';')
+        }
+    }
+
+    /**
+     * 解析并写入配置。
+     *
+     * @return 成功写入的项数；`-1` 表示前缀不对、格式无法识别。
+     *         未知的 key 会被忽略而不是报错，便于跨版本传递配置。
+     */
+    fun importTo(p: SharedPreferences, raw: String): Int {
+        val text = raw.trim()
+        if (!text.startsWith(CONFIG_PREFIX)) return -1
+
+        val editor = p.edit()
+        var applied = 0
+        for (part in text.removePrefix(CONFIG_PREFIX).split(';')) {
+            if (part.isBlank()) continue
+            val sep = part.indexOf('=')
+            if (sep <= 0) continue
+            val key = part.substring(0, sep).trim()
+            val value = part.substring(sep + 1).trim()
+            when (key) {
+                in BOOLEAN_KEYS -> {
+                    editor.putBoolean(key, value == "1")
+                    applied++
+                }
+                in INT_KEYS -> {
+                    value.toIntOrNull()?.let {
+                        editor.putInt(key, it.coerceIn(MIN_ACCOUNTS_LIMIT, MAX_ACCOUNTS_LIMIT))
+                        applied++
+                    }
+                }
+            }
+        }
+        editor.apply()
+        return applied
+    }
 }
