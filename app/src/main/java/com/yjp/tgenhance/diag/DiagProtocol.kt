@@ -35,4 +35,12 @@ object DiagProtocol {
 
     /** 自检未命中标记。 */
     const val MARK_MISS = "MISS "
+
+    /**
+     * 候选方法名与目标之间的分隔符。
+     *
+     * 形如 `MISS StoriesController#hasStories()|hasNewStories,hasSelfStories`：
+     * 竖线前是没对上的目标，竖线后是同类里名字相近的方法。
+     */
+    const val SUGGESTION_SEP = '|'
 }

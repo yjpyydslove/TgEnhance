@@ -72,7 +72,12 @@ object DiagBridge {
         } else {
             for (item in report) {
                 append(if (item.ok) DiagProtocol.MARK_OK else DiagProtocol.MARK_MISS)
-                append(item.owner).append('#').append(item.member).append('\n')
+                append(item.owner).append('#').append(item.member)
+                if (item.suggestions.isNotEmpty()) {
+                    append(DiagProtocol.SUGGESTION_SEP)
+                    append(item.suggestions.joinToString(","))
+                }
+                append('\n')
             }
         }
     }

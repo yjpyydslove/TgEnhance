@@ -532,7 +532,13 @@ class SettingsActivity : Activity() {
 
         sb.append("\n\n未匹配的项（对应功能大概率无效，需要针对该版本重新定位）：\n")
         for (line in missing) {
-            sb.append("  · ").append(line.removePrefix(DiagProtocol.MARK_MISS)).append('\n')
+            val body = line.removePrefix(DiagProtocol.MARK_MISS)
+            val parts = body.split(DiagProtocol.SUGGESTION_SEP)
+            sb.append("  · ").append(parts[0]).append('\n')
+            val suggestions = parts.getOrNull(1)
+            if (!suggestions.isNullOrBlank()) {
+                sb.append("      候选新名字：").append(suggestions).append('\n')
+            }
         }
         return sb.toString().trimEnd()
     }

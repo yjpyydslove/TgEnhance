@@ -21,7 +21,14 @@ object Diagnostics {
         /** 成员签名，例如 `getMaxAccountCount()`；类缺失时为「类缺失」。 */
         val member: String,
         /** 是否命中。 */
-        val ok: Boolean
+        val ok: Boolean,
+        /**
+         * 未命中时给出的同类方法候选名。
+         *
+         * 官方把 `hasStories` 改成 `hasNewStories` 这类改动，报错本身毫无线索，
+         * 翻源码又得先知道去哪个类翻。直接把候选列出来，一眼就能看出新名字。
+         */
+        val suggestions: List<String> = emptyList()
     )
 
     private data class Target(val className: String, val methods: List<String>)
@@ -86,8 +93,44 @@ object Diagnostics {
         )
         if (okCount < items.size) {
             XLog.w("[诊断] 未命中的项见上方逐条输出；设置界面的「运行状态」里也能直接看到")
+            for (item in items.filter { !it.ok && it.suggestions.isNotEmpty() }) {
+                XLog.result(
+                    "诊断",
+                    "${item.owner}.${item.member} 的候选新名字: ${item.suggestions.joinToString(", ")}"
+                )
+            }
         }
         XLog.section("诊断报告结束")
+    }
+
+    /**
+     * 方法名对不上时，在同一个类里找名字相近的方法作为候选。
+     *
+     * 做法是取「方法名的词干」前 8 个字符做包含匹配：
+     * `getMaxAccountCount` -> `maxaccountcount` -> `maxaccou`，
+     * 这样官方把它改成 `getMaxAccountsCount` 时仍然能命中。
+     */
+    private fun suggestCandidates(cls: Class<*>, methodName: String): List<String> {
+        val lower = methodName.lowercase()
+        val stem = lower
+            .removePrefix("get")
+            .removePrefix("set")
+            .removePrefix("is")
+            .removePrefix("has")
+        val probe = (if (stem.length >= 4) stem else lower).take(8)
+        if (probe.length < 4) return emptyList()
+
+        return try {
+            cls.declaredMethods.asSequence()
+                .map { it.name }
+                .filter { it.lowercase().contains(probe) }
+                .distinct()
+                .sorted()
+                .take(6)
+                .toList()
+        } catch (t: Throwable) {
+            emptyList()
+        }
     }
 
     private fun check(classLoader: ClassLoader, target: Target): List<CheckItem> {
@@ -115,7 +158,14 @@ object Diagnostics {
             }
 
             if (overloads.isEmpty()) {
-                out.add(CheckItem(simpleName, "$methodName()", false))
+                out.add(
+                    CheckItem(
+                        owner = simpleName,
+                        member = "$methodName()",
+                        ok = false,
+                        suggestions = suggestCandidates(cls, methodName)
+                    )
+                )
                 logParts.add("$methodName -> 缺失")
                 continue
             }
