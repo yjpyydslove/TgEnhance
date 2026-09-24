@@ -12,6 +12,7 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodHook.MethodHookParam
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
+import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.Collections
@@ -50,6 +51,42 @@ object StealthHooks {
         "com.yjp.tgenhance",
     )
 
+    /**
+     * 暴露给反检测自检用的前缀列表（v N1.2）。
+     *
+     * 自检必须用**同一份**前缀去验证，否则「挡的」和「验的」是两套标准，
+     * 自检就会给出错误的安心感。所以这里不做第二份拷贝，直接暴露同一个列表。
+     */
+    val hiddenPrefixes: List<String> get() = HIDDEN_PREFIXES
+
+    /**
+     * 判断一个类名是否属于需要隐藏的范围（v N1.2，供自检使用）。
+     *
+     * 只是 [hiddenByPrefix] 的公开别名 —— 同样是为了让自检与拦截共用一份判定。
+     */
+    fun isHiddenName(className: String): Boolean = hiddenByPrefix(className)
+
+    /**
+     * 取一个已被本模块 hook 过的方法作为抽查样本（v N1.2，供自检使用）。
+     *
+     * 返回 `null` 表示还没有任何方法登记 —— 那种情况下「native 标志探测」
+     * 无物可验，自检应显示为「跳过」而不是「通过」。
+     *
+     * 这里存的是 `Method` 的**弱引用**：hook 名单会一直增长，
+     * 而强引用会让所有被 hook 的方法对象（连同它们的类）无法被回收 ——
+     * 对一个活在宿主进程里的模块来说，那是实打实的内存泄漏。
+     */
+    fun firstHookedMethod(): Method? {
+        val iterator = hookedMethodRefs.iterator()
+        while (iterator.hasNext()) {
+            val method = iterator.next().get()
+            if (method != null) return method
+            // 顺便清理已被回收的引用
+            iterator.remove()
+        }
+        return null
+    }
+
     fun install(classLoader: ClassLoader) {
         XLog.section("反检测")
         XLog.i(
@@ -77,6 +114,17 @@ object StealthHooks {
         Collections.synchronizedSet(HashSet<String>())
 
     /**
+     * 与方法签名对应的 `Method` 弱引用（v N1.2）。
+     *
+     * 只用于反检测自检里的「抽查一个方法看标志有没有抹平」。
+     * 存弱引用而不是强引用：这个方法活在宿主进程里、随 Telegram 全程存活，
+     * 强引用会把每个被 hook 的方法对象连同它的 `Class` 一起钉住，
+     * 属于实打实的内存泄漏。
+     */
+    private val hookedMethodRefs: MutableList<WeakReference<Method>> =
+        Collections.synchronizedList(ArrayList<WeakReference<Method>>())
+
+    /**
      * 登记一个被 hook 的方法。
      *
      * 必须由 [HookInstaller] 在 `XposedBridge.hookMethod` **之前**调用 ——
@@ -85,8 +133,11 @@ object StealthHooks {
     fun markHooked(method: Method) {
         try {
             hookedSignatures.add(signatureOf(method))
+            hookedMethodRefs.add(WeakReference(method))
         } catch (t: Throwable) {
             // 登记失败只影响隐身，不影响 Hook 本身
+            // 但要让「隐身可能不完整」变成可观测的事实，而不是彻底无声
+            HookStats.hit("stealth.markFailed")
         }
     }
 

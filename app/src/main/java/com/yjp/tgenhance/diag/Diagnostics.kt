@@ -8,6 +8,7 @@ import com.yjp.tgenhance.hooks.ClientProfileDetector
 import com.yjp.tgenhance.hooks.ConflictWatch
 import com.yjp.tgenhance.hooks.HookFinder
 import com.yjp.tgenhance.hooks.HookStatus
+import com.yjp.tgenhance.hooks.StealthSelfTest
 import de.robv.android.xposed.XposedHelpers
 
 /**
@@ -163,6 +164,9 @@ object Diagnostics {
         internalErrorCheck()?.let { items += it }
         fuzzyMatchCheck()?.let { items += it }
         items += frameworkCheck()
+        // 反检测自检放最后：它验的是「前面所有拦截都装好之后」的实际效果，
+        // 必须等 StealthHooks.install 跑完才有意义
+        stealthSelfTest(classLoader)?.let { items += it }
         // 有问题的项排前面：自检结果动辄十几行，没人会逐行读完，
         // 把「需要处理的」顶到最上面，比按类别整齐排列更有用
         lastReport = items.sortedBy { if (it.ok) 1 else 0 }
@@ -363,6 +367,30 @@ object Diagnostics {
             } else {
                 listOf("配置不可读时所有功能都会保持关闭 —— LSPatch 等免 root 方案常见")
             }
+        )
+    }
+
+    /**
+     * 反检测自检（v N1.2）。
+     *
+     * 用检测方的手法探测自己，把「挡没挡住」变成可读的事实。
+     * 在此之前，「隐藏模块痕迹」是用户只能选择相信的开关。
+     *
+     * 开关没开时返回 null 不占行 —— 那种情况下所有探测都会「没挡住」，
+     * 列出来只会误导；用户自己知道开关是关的。
+     */
+    private fun stealthSelfTest(classLoader: ClassLoader): CheckItem? {
+        if (!Prefs.hideXposed) return null
+
+        val probes = StealthSelfTest.runAndStore(classLoader)
+        if (probes.isEmpty()) return null
+
+        val leaked = probes.filter { !it.blocked }
+        return CheckItem(
+            owner = "反检测",
+            member = "自检：${probes.size - leaked.size}/${probes.size} 项探测已挡住",
+            ok = leaked.isEmpty(),
+            suggestions = leaked.map { "${it.name}：${it.detail}" }
         )
     }
 

@@ -67,6 +67,7 @@ object HookCatalog {
         HookPoint("stealth.appInfo", "拒绝模块应用信息查询"),
         HookPoint("stealth.pkgList", "清除包列表条目"),
         HookPoint("stealth.modifiers", "抹除 native 标志"),
+        HookPoint("stealth.markFailed", "隐身登记失败"),
 
         // 框架
         HookPoint("prefs.reload", "配置热更新"),
