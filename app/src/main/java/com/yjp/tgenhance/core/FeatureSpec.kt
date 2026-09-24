@@ -5,14 +5,14 @@ import com.yjp.tgenhance.Prefs
 /**
  * 设置界面的分组。**枚举声明顺序即界面顺序**。
  */
-enum class FeatureGroup(val title: String) {
-    ACCOUNT("多账号"),
-    UI("界面与主题"),
-    NETWORK("网络"),
-    PRIVACY("隐私与本地增强"),
-    ADS("广告屏蔽"),
-    ADVANCED("高级功能"),
-    DIAG("诊断"),
+enum class FeatureGroup(val title: String, val desc: String) {
+    ACCOUNT("多账号", "解锁 Telegram 原生的账号数限制"),
+    UI("界面与主题", "字体、Stories 等界面层面的调整"),
+    NETWORK("网络", "下载与连接相关的行为调整"),
+    PRIVACY("隐私与本地增强", "影响消息收发状态的本地行为"),
+    ADS("广告屏蔽", "屏蔽聊天中的推广内容 —— 本模块唯一涉及收入的功能"),
+    ADVANCED("高级功能", "进阶选项，已按推荐值配好，一般不用动"),
+    DIAG("诊断", "自检与运行状态，反馈问题时用得上"),
 }
 
 /** 功能的副作用级别；非 [NONE] 的项在开启前必须弹确认。 */

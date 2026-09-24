@@ -337,6 +337,11 @@ class SettingsActivity : Activity() {
 
             val titleView = sectionTitleView(group.title)
             root.addView(titleView, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            // 分组说明：标题本身只有两三个字，普通用户未必能判断里面装了什么
+            root.addView(
+                sectionDescView(group.desc),
+                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+            )
 
             val card = cardView()
             root.addView(card, cardParams())
@@ -1081,6 +1086,14 @@ class SettingsActivity : Activity() {
         typeface = Typeface.DEFAULT_BOLD
         setTextColor(color(R.color.accent))
         setPadding(dp(20), dp(24), dp(16), dp(8))
+    }
+
+    /** 分组说明：跟在标题下方的小字，颜色比正文淡一级。 */
+    private fun sectionDescView(text: String): TextView = TextView(this).apply {
+        this.text = text
+        textSize = 12.5f
+        setTextColor(color(R.color.text_secondary))
+        setPadding(dp(20), 0, dp(16), dp(8))
     }
 
     /** 12dp 圆角卡片容器。 */
