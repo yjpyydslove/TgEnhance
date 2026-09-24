@@ -36,6 +36,9 @@ import java.lang.reflect.Modifier
  *
  * 扩容采用「按需」而非「启动即扩容」：只有真的用到第 N 个账号时才动数组，
  * 既避免启动期强制初始化整条 Manager 链（很重），也把对原逻辑的扰动降到最低。
+ *
+ * v2.0.0 起改为「钩子常驻 + 回调内读配置」，因此上限数值可以在运行期调整
+ * （`Prefs.reload()` 之后立即按新值生效，无需重启）。
  */
 object AccountHooks {
 
@@ -72,21 +75,19 @@ object AccountHooks {
     )
 
     fun install(classLoader: ClassLoader) {
-        if (!Prefs.accountEnabled) {
-            XLog.i("[多账号] 开关关闭，跳过")
-            return
-        }
+        XLog.section("多账号上限提升")
+        XLog.i(
+            "[多账号] 配置快照：开关=${Prefs.accountEnabled}、上限=${Prefs.maxAccounts}" +
+                "（运行期实时读取，改设置切回 Telegram 即生效）"
+        )
 
-        val max = Prefs.maxAccounts
-        XLog.section("多账号上限提升 -> $max")
-
-        hookMaxAccountCount(classLoader, max)
+        hookMaxAccountCount(classLoader)
 
         var hooked = 0
         var missing = 0
         val detail = StringBuilder()
         for (className in CAPACITY_CLASSES) {
-            when (installCapacityHook(classLoader, className, max)) {
+            when (installCapacityHook(classLoader, className)) {
                 CapResult.OK -> {
                     hooked++
                     detail.append(className.substringAfterLast('.')).append(' ')
@@ -102,14 +103,14 @@ object AccountHooks {
         }
 
         // 重写依赖 MAX_ACCOUNT_COUNT 常量循环的方法
-        hookConstantBoundMethods(classLoader, max)
+        hookConstantBoundMethods(classLoader)
     }
 
     // ------------------------------------------------------------------
     // 1. UI 层账号上限
     // ------------------------------------------------------------------
 
-    private fun hookMaxAccountCount(classLoader: ClassLoader, max: Int) {
+    private fun hookMaxAccountCount(classLoader: ClassLoader) {
         val cls = XposedHelpers.findClassIfExists(CLS_USER_CONFIG, classLoader)
         if (cls == null) {
             XLog.e("[多账号] 未找到 $CLS_USER_CONFIG，作用域是否勾选了 Telegram？")
@@ -120,10 +121,11 @@ object AccountHooks {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     if (param.args.isNotEmpty()) return
                     HookStats.hit("account.maxCount")
-                    param.result = max
+                    if (!Prefs.accountEnabled) return
+                    param.result = Prefs.maxAccounts
                 }
             })
-            XLog.result("多账号", "UserConfig.getMaxAccountCount() 恒定返回 $max（原始：免费 3 / 会员 5）")
+            XLog.result("多账号", "UserConfig.getMaxAccountCount() 已接管（开启后返回设定值）")
         }
     }
 
@@ -133,7 +135,7 @@ object AccountHooks {
 
     private enum class CapResult { OK, CLASS_MISSING, NO_FIELD, NO_METHOD, ERROR }
 
-    private fun installCapacityHook(classLoader: ClassLoader, className: String, max: Int): CapResult {
+    private fun installCapacityHook(classLoader: ClassLoader, className: String): CapResult {
         // 关键：initialized = false。若在此处触发静态初始化，
         // 会把整条 Manager 链连带拉起（读库、起线程），代价极高且可能引发启动问题。
         val cls: Class<*> = try {
@@ -148,9 +150,10 @@ object AccountHooks {
         return try {
             XposedBridge.hookMethod(method, object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
+                    if (!Prefs.accountEnabled) return
                     val index = param.args.getOrNull(0) as? Int ?: return
                     if (index < 0) return
-                    ensureCapacity(cls, field, index, max)
+                    ensureCapacity(cls, field, index)
                 }
             })
             CapResult.OK
@@ -198,7 +201,7 @@ object AccountHooks {
      * `Instance[num]` 现场读静态字段，所以替换后原方法会自然读到新数组，
      * 后续的 `new Xxx(num)` 逻辑保持不变。
      */
-    private fun ensureCapacity(cls: Class<*>, field: Field, index: Int, max: Int) {
+    private fun ensureCapacity(cls: Class<*>, field: Field, index: Int) {
         synchronized(cls) {
             val current = try {
                 field.get(null) as? Array<*> ?: return
@@ -207,6 +210,7 @@ object AccountHooks {
                 return
             }
 
+            val max = Prefs.maxAccounts
             val needed = maxOf(index + 1, max)
             if (current.size >= needed) return
 
@@ -227,24 +231,27 @@ object AccountHooks {
     // 3. 重写被 MAX_ACCOUNT_COUNT 常量写死循环上界的方法
     // ------------------------------------------------------------------
 
-    private fun hookConstantBoundMethods(classLoader: ClassLoader, max: Int) {
+    private fun hookConstantBoundMethods(classLoader: ClassLoader) {
         val userConfig = XposedHelpers.findClassIfExists(CLS_USER_CONFIG, classLoader) ?: return
         val accountInstance = XposedHelpers.findClassIfExists(CLS_ACCOUNT_INSTANCE, classLoader) ?: return
 
-        // getActivatedAccountsCount(): for (a = 0; a < MAX_ACCOUNT_COUNT; a++) —— 上界被内联为 4
+        // getActivatedAccountsCount(): for (a = 0; a < MAX_ACCOUNT_COUNT; a++) —— 上界被内联为常量
         safe("getActivatedAccountsCount") {
             XposedBridge.hookAllMethods(userConfig, "getActivatedAccountsCount", object : XC_MethodReplacement() {
-                override fun replaceHookedMethod(param: MethodHookParam): Any =
-                    countActivated(accountInstance, max)
+                override fun replaceHookedMethod(param: MethodHookParam): Any {
+                    if (!Prefs.accountEnabled) return invokeOriginal(param) ?: 0
+                    return countActivated(accountInstance)
+                }
             })
-            XLog.result("多账号", "getActivatedAccountsCount() 已扩展到 $max 个账号范围")
+            XLog.result("多账号", "getActivatedAccountsCount() 已接管（遍历范围跟随设定值）")
         }
 
         // hasPremiumOnAccounts(): 同样被常量写死，会导致高级账号状态判断不全
         safe("hasPremiumOnAccounts") {
             XposedBridge.hookAllMethods(userConfig, "hasPremiumOnAccounts", object : XC_MethodReplacement() {
                 override fun replaceHookedMethod(param: MethodHookParam): Any {
-                    for (a in 0 until max) {
+                    if (!Prefs.accountEnabled) return invokeOriginal(param) ?: false
+                    for (a in 0 until Prefs.maxAccounts) {
                         try {
                             val instance = XposedHelpers.callStaticMethod(accountInstance, "getInstance", a) ?: continue
                             val uc = XposedHelpers.callMethod(instance, "getUserConfig") ?: continue
@@ -258,13 +265,13 @@ object AccountHooks {
                     return false
                 }
             })
-            XLog.result("多账号", "hasPremiumOnAccounts() 已扩展到 $max 个账号范围")
+            XLog.result("多账号", "hasPremiumOnAccounts() 已接管（遍历范围跟随设定值）")
         }
     }
 
-    private fun countActivated(accountInstanceClass: Class<*>, max: Int): Int {
+    private fun countActivated(accountInstanceClass: Class<*>): Int {
         var count = 0
-        for (a in 0 until max) {
+        for (a in 0 until Prefs.maxAccounts) {
             try {
                 val instance = XposedHelpers.callStaticMethod(accountInstanceClass, "getInstance", a) ?: continue
                 val uc = XposedHelpers.callMethod(instance, "getUserConfig") ?: continue
@@ -275,4 +282,17 @@ object AccountHooks {
         }
         return count
     }
+
+    /**
+     * 放行：手动执行被替换掉的原方法。
+     *
+     * 用 [XC_MethodReplacement] 时必须显式回退，否则「开关关闭」也会顺手把原逻辑吃掉。
+     */
+    private fun invokeOriginal(param: MethodHookParam): Any? =
+        try {
+            XposedBridge.invokeOriginalMethod(param.method, param.thisObject, param.args)
+        } catch (t: Throwable) {
+            XLog.e("回退原方法失败 (${param.method.name}): ${t.message}")
+            null
+        }
 }

@@ -9,13 +9,12 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodHook.MethodHookParam
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
-import java.lang.reflect.Method
 import java.util.Locale
 
 /**
  * 界面与主题定制。
  *
- * 目前两项能力：
+ * 两项能力：
  *
  * 1) 使用系统字体
  *    Telegram 所有内嵌字体都经由 `AndroidUtilities.getTypeface(String assetPath)`
@@ -23,8 +22,15 @@ import java.util.Locale
  *    接管该方法即可整体替换，无需碰任何 UI 代码。
  *
  * 2) 隐藏 Stories
- *    聊天列表头部的 Stories 环由 `StoriesController` 的若干布尔查询方法驱动，
- *    统一返回 false 即可收起入口。
+ *    聊天列表头部的 Stories 环由 `org.telegram.ui.Stories.StoriesController` 的
+ *    若干布尔查询方法驱动，统一返回 false 即可收起入口。
+ *
+ *    v2.0.0 起改用 [HookFinder] 按特征定位，不再依赖写死的方法名 ——
+ *    已知的 4 个查询方法作为「精确名单」保证不误伤，特征匹配作为兜底保证
+ *    官方改名后仍能命中。
+ *
+ *    刻意**不**接管 `hasLiveStory` / `hasUploadingStories` / `hasLoadingStories`：
+ *    它们表达的是「加载中」，返回 false 会打乱状态而不是隐藏入口。
  */
 object ThemeHooks {
 
@@ -36,33 +42,27 @@ object ThemeHooks {
         "rmedium", "rextrabold", "rmediumitalic", "rbold", "roboto", "rmono", "mw_bold"
     )
 
-    /** 与 Stories 展示相关的布尔查询方法（跨版本做多候选尝试）。 */
-    private val STORIES_BOOLEAN_METHODS = listOf(
+    /**
+     * Stories 查询方法精确名单（已对照官方源码逐条核对语义）。
+     *
+     * 兜底特征为「返回 boolean + 以 has 开头 + 名字含 stor」。
+     */
+    private val STORIES_QUERY_NAMES = listOf(
         "hasStories",
         "hasUnreadStories",
         "hasHiddenStories",
         "hasSelfStories",
-        "hasRecentStories",
     )
 
     fun install(classLoader: ClassLoader) {
-        if (!Prefs.uiEnabled) {
-            XLog.i("[界面] 开关关闭，跳过")
-            return
-        }
         XLog.section("界面与主题定制")
+        XLog.i(
+            "[界面] 配置快照：系统字体=${Prefs.systemFont}、" +
+                "隐藏 Stories=${Prefs.hideStories}（运行期实时读取，改设置无需重启）"
+        )
 
-        if (Prefs.systemFont) {
-            hookSystemTypeface(classLoader)
-        } else {
-            XLog.i("[界面] 系统字体：未启用")
-        }
-
-        if (Prefs.hideStories) {
-            hookHideStories(classLoader)
-        } else {
-            XLog.i("[界面] 隐藏 Stories：未启用")
-        }
+        hookSystemTypeface(classLoader)
+        hookHideStories(classLoader)
     }
 
     // ------------------------------------------------------------------
@@ -76,17 +76,33 @@ object ThemeHooks {
             return
         }
 
+        val targets = HookFinder.findMethods(
+            cls,
+            returnType = Typeface::class.java,
+            namePrefix = "getTypeface"
+        )
+        if (targets.isEmpty()) {
+            XLog.e("[字体] AndroidUtilities 上未定位到返回 Typeface 的 getTypeface 重载")
+            return
+        }
+
         safe("系统字体") {
-            XposedBridge.hookAllMethods(cls, "getTypeface", object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    val assetPath = param.args.getOrNull(0) as? String ?: return
-                    HookStats.hit("ui.typeface.seen")
-                    val mapped = mapToSystemTypeface(assetPath) ?: return
-                    HookStats.hit("ui.typeface.replaced")
-                    param.result = mapped
-                }
-            })
-            XLog.result("界面", "已接管 AndroidUtilities.getTypeface() -> 系统字体")
+            for (method in targets) {
+                XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val assetPath = param.args.getOrNull(0) as? String ?: return
+                        HookStats.hit("ui.typeface.seen")
+                        if (!Prefs.uiEnabled || !Prefs.systemFont) return
+                        val mapped = mapToSystemTypeface(assetPath) ?: return
+                        HookStats.hit("ui.typeface.replaced")
+                        param.result = mapped
+                    }
+                })
+            }
+            XLog.result(
+                "界面",
+                "已接管 ${targets.size} 个 getTypeface 重载 -> 系统字体（开启后生效）"
+            )
         }
     }
 
@@ -119,26 +135,33 @@ object ThemeHooks {
             return
         }
 
-        var hooked = 0
-        for (methodName in STORIES_BOOLEAN_METHODS) {
-            safe("Stories.$methodName") {
-                XposedBridge.hookAllMethods(cls, methodName, object : XC_MethodHook() {
-                    override fun afterHookedMethod(param: MethodHookParam) {
-                        val m = param.method as? Method ?: return
-                        if (m.returnType == Boolean::class.javaPrimitiveType) {
-                            HookStats.hit("ui.stories")
-                            param.result = false
-                        }
-                    }
-                })
-                hooked++
-            }
+        val targets = HookFinder.match(
+            cls,
+            explicitNames = STORIES_QUERY_NAMES,
+            returnType = Boolean::class.javaPrimitiveType,
+            namePrefix = "has",
+            nameContains = "stor"
+        )
+        if (targets.isEmpty()) {
+            XLog.w("[Stories] 未匹配到任何查询方法，隐藏可能无效")
+            return
         }
 
-        if (hooked > 0) {
-            XLog.result("界面", "StoriesController 上已接管 $hooked 组查询方法，Stories 入口将被隐藏")
-        } else {
-            XLog.w("[Stories] 未匹配到任何可接管的方法，隐藏可能无效")
+        safe("隐藏 Stories") {
+            for (method in targets) {
+                XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        if (!Prefs.uiEnabled || !Prefs.hideStories) return
+                        HookStats.hit("ui.stories")
+                        param.result = false
+                    }
+                })
+            }
+            XLog.result(
+                "界面",
+                "StoriesController 已接管 ${targets.size} 个查询方法：" +
+                    targets.joinToString(", ") { it.name }
+            )
         }
     }
 }

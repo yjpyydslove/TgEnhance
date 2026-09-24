@@ -29,17 +29,9 @@ object NetworkHooks {
     private const val CLS_CONNECTIONS_MANAGER = "org.telegram.tgnet.ConnectionsManager"
 
     fun install(classLoader: ClassLoader) {
-        if (!Prefs.netEnabled) {
-            XLog.i("[网络] 开关关闭，跳过")
-            return
-        }
         XLog.section("网络增强")
-
-        if (Prefs.blockProxyProbe) {
-            hookBlockProxyProbe(classLoader)
-        } else {
-            XLog.i("[网络] 代理探测防护：未启用")
-        }
+        XLog.i("[网络] 配置快照：阻止代理探测=${Prefs.blockProxyProbe}（运行期实时读取，改设置无需重启）")
+        hookBlockProxyProbe(classLoader)
     }
 
     private fun hookBlockProxyProbe(classLoader: ClassLoader) {
@@ -53,11 +45,12 @@ object NetworkHooks {
             XposedBridge.hookAllMethods(cls, "checkProxy", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     HookStats.hit("net.proxyProbe")
+                    if (!Prefs.netEnabled || !Prefs.blockProxyProbe) return
                     param.result = 0L
                     XLog.result("网络", "已阻止一次代理探测（真实 IP 不外泄）")
                 }
             })
-            XLog.result("网络", "checkProxy() 已接管：不再发起绕开代理的连通性探测")
+            XLog.result("网络", "checkProxy() 已接管：开启后不再发起绕开代理的连通性探测")
         }
     }
 }

@@ -2,6 +2,7 @@ package com.yjp.tgenhance
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.SystemClock
 import de.robv.android.xposed.XSharedPreferences
 
 /**
@@ -38,6 +39,7 @@ object Prefs {
     const val ENABLE_PRIVACY = "enable_privacy"
     const val ANTI_RECALL = "anti_recall"
     const val HIDE_TYPING = "hide_typing"
+    const val BLOCK_READ_RECEIPT = "block_read_receipt"
 
     // ---------------- 诊断 ----------------
     const val ENABLE_DIAG = "enable_diag"
@@ -50,6 +52,11 @@ object Prefs {
     const val DEF_TIMEOUT_SCALE = 100
     const val MIN_TIMEOUT_SCALE = 50
     const val MAX_TIMEOUT_SCALE = 400
+
+    private const val RELOAD_THROTTLE_MS = 1_000L
+
+    @Volatile
+    private var lastReload = 0L
 
     @Volatile
     private var hookPrefs: XSharedPreferences? = null
@@ -76,6 +83,26 @@ object Prefs {
 
     fun requireAppPrefs(): SharedPreferences =
         appPrefs ?: throw IllegalStateException("Prefs.initForApp() 未调用")
+
+    /**
+     * 让 hook 端重新读取配置文件。
+     *
+     * v2.0.0 起 hook 全部**常驻挂载**，开关判断放在回调里实时读取，
+     * 因此只要调用本方法刷新一次，多数设置无需重启 Telegram 即可生效
+     * （LSPosed 给的是文件快照，不 reload 的话读到的还是启动时的旧值）。
+     *
+     * 节流 1 秒：Activity 密集 resume 时不必反复读盘。
+     */
+    fun reload() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastReload < RELOAD_THROTTLE_MS) return
+        lastReload = now
+        try {
+            hookPrefs?.reload()
+        } catch (t: Throwable) {
+            XLog.e("配置重载失败: ${t.message}")
+        }
+    }
 
     // ---------------- hook 端读取 ----------------
 
@@ -113,4 +140,5 @@ object Prefs {
 
     val antiRecall: Boolean get() = hookBoolean(ANTI_RECALL, false)
     val hideTyping: Boolean get() = hookBoolean(HIDE_TYPING, false)
+    val blockReadReceipt: Boolean get() = hookBoolean(BLOCK_READ_RECEIPT, false)
 }

@@ -8,5 +8,5 @@
     <string name="section_network">网络</string>
     <string name="section_debug">诊断</string>
 
-    <string name="restart_tip">修改设置后，请从最近任务中划掉 Telegram 再重新打开（无需重启手机）。</string>
+    <string name="restart_tip">多数设置改完切回 Telegram 即生效；个别仅启动期生效的项需重启 Telegram。</string>
 </resources>

@@ -11,6 +11,7 @@ import com.yjp.tgenhance.hooks.ThemeHooks
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.IXposedHookZygoteInit
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 
@@ -41,6 +42,7 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         XLog.safe("ThemeHooks") { ThemeHooks.install(lpparam.classLoader) }
         XLog.safe("NetworkHooks") { NetworkHooks.install(lpparam.classLoader) }
         XLog.safe("PrivacyHooks") { PrivacyHooks.install(lpparam.classLoader) }
+        XLog.safe("PrefsReload") { installPrefsReloadHook(lpparam.classLoader) }
 
         if (Prefs.diagEnabled) {
             XLog.safe("Diagnostics") { Diagnostics.run(lpparam.classLoader) }
@@ -51,6 +53,33 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         XLog.safe("HookStats") { scheduleStatsReport(lpparam.classLoader) }
 
         XLog.i("全部模块挂载流程结束")
+    }
+
+    /**
+     * 挂载「配置热更新」钩子。
+     *
+     * v2.0.0 起所有 Hook 都常驻，开关改为在回调里实时读 `Prefs.*`，
+     * 所以只要让 hook 端重新加载一次配置文件，多数设置就能**免重启**生效。
+     *
+     * 时机选 Telegram 主界面 `LaunchActivity.onResume`：用户从模块设置页切回
+     * Telegram 时必然触发。Telegram 是单 Activity 架构，挂这一个就够。
+     * 找不到该类时退回系统 `Activity.onResume`（[Prefs.reload] 内部有 1 秒节流）。
+     */
+    private fun installPrefsReloadHook(classLoader: ClassLoader) {
+        val target = XposedHelpers.findClassIfExists("org.telegram.ui.LaunchActivity", classLoader)
+            ?: XposedHelpers.findClassIfExists("android.app.Activity", classLoader)
+        if (target == null) {
+            XLog.w("[配置] 未找到可用的重载时机，改动设置后仍需重启 Telegram")
+            return
+        }
+
+        XposedBridge.hookAllMethods(target, "onResume", object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                HookStats.hit("prefs.reload")
+                Prefs.reload()
+            }
+        })
+        XLog.result("配置", "已在 ${target.name}.onResume 挂载配置热更新：改设置切回即生效")
     }
 
     /**

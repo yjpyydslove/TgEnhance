@@ -13,9 +13,20 @@ import de.robv.android.xposed.XposedHelpers
 /**
  * 隐私与本地增强。
  *
- * 1) 隐藏「正在输入 / 录音中」状态
- *    `MessagesController.sendTyping(long dialogId, long threadMsgId, int action, [String emojicon,] int classGuid)`
- *    （源码 11381 / 11385）。整体接管返回 false，对方不再看到输入提示。
+ * ### v2.0.0 的结构变化：hook 常驻，开关实时读
+ *
+ * 上一版是「开关关着就不挂 hook」，副作用是改完设置必须重启 Telegram。
+ * 现在改为**一律挂载**，在回调里读 `Prefs.*` 判断开关 —— 配合
+ * [Prefs.reload]（hook `LaunchActivity.onResume` 时调用），改完设置切回
+ * Telegram 前台即生效，不需要重启。
+ *
+ * 代价是功能关闭时 hook 仍在，但每个回调只是几次内存读，可以忽略。
+ *
+ * ### 三项能力
+ *
+ * 1) 隐藏「正在输入 / 录音中」
+ *    `MessagesController.sendTyping(...)`（源码 11381 / 11385）。
+ *    整体接管返回 false，对方不再看到输入提示。
  *
  * 2) 防撤回
  *    Telegram 的删除有两个来源，必须区分开，否则会误伤用户自己的删除操作：
@@ -27,29 +38,33 @@ import de.robv.android.xposed.XposedHelpers
  *
  *    本实现用「调用栈 + dialogId」双重判据定位服务器撤回，
  *    判断不出的情况一律放行 —— **宁可漏拦，也不误伤用户自己删消息**。
+ *
+ * 3) 不上报已读回执（v2.0.0 新增）
+ *    `MessagesController.completeReadTask(ReadTask)`（源码 14559）是已读位置
+ *    **唯一的网络出口** —— `TL_messages_readHistory` / `channels_readHistory` /
+ *    `readEncryptedHistory` / `readDiscussion` / `readSavedHistory` 五种请求全在这里发出。
+ *
+ *    拦截它即可做到「本地照常标记已读、但不告诉服务器」，
+ *    对方永远看不到你的已读状态。
+ *
+ *    本地已读的写入发生在更早的 `markDialogAsRead`（约 14675 行）里，
+ *    与这里解耦，所以拦截不会影响你自己的未读显示。
  */
 object PrivacyHooks {
 
     private const val CLS_MESSAGES_CONTROLLER = "org.telegram.messenger.MessagesController"
 
     fun install(classLoader: ClassLoader) {
-        if (!Prefs.privacyEnabled) {
-            XLog.i("[隐私] 开关关闭，跳过")
-            return
-        }
         XLog.section("隐私与本地增强")
+        XLog.i(
+            "[隐私] 配置快照：防撤回=${Prefs.antiRecall}、" +
+                "隐藏输入=${Prefs.hideTyping}、不上报已读=${Prefs.blockReadReceipt}" +
+                "（运行期实时读取，改设置无需重启）"
+        )
 
-        if (Prefs.antiRecall) {
-            hookAntiRecall(classLoader)
-        } else {
-            XLog.i("[隐私] 防撤回：未启用")
-        }
-
-        if (Prefs.hideTyping) {
-            hookHideTyping(classLoader)
-        } else {
-            XLog.i("[隐私] 隐藏输入状态：未启用")
-        }
+        hookHideTyping(classLoader)
+        hookAntiRecall(classLoader)
+        hookBlockReadReceipt(classLoader)
     }
 
     // ------------------------------------------------------------------
@@ -65,12 +80,13 @@ object PrivacyHooks {
 
         safe("隐藏输入状态") {
             XposedBridge.hookAllMethods(cls, "sendTyping", object : XC_MethodReplacement() {
-                override fun replaceHookedMethod(param: MethodHookParam): Any {
+                override fun replaceHookedMethod(param: MethodHookParam): Any? {
+                    if (!Prefs.privacyEnabled || !Prefs.hideTyping) return invokeOriginal(param)
                     HookStats.hit("privacy.typing")
                     return false
                 }
             })
-            XLog.result("隐私", "sendTyping() 已接管：不再向对方发送输入/录音状态")
+            XLog.result("隐私", "sendTyping() 已接管：开启后不再发送输入/录音状态")
         }
     }
 
@@ -90,6 +106,7 @@ object PrivacyHooks {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     // 只要 deleteMessages 被调用就计数，用于判断 hook 是否还挂在活跃路径上
                     HookStats.hit("privacy.deleteMessages")
+                    if (!Prefs.privacyEnabled || !Prefs.antiRecall) return
                     if (!isServerSideRecall(param)) return
                     // 短路，不执行原删除逻辑
                     param.result = null
@@ -149,5 +166,41 @@ object PrivacyHooks {
             }
         } catch (t: Throwable) {
             false
+        }
+
+    // ------------------------------------------------------------------
+    // 不上报已读回执
+    // ------------------------------------------------------------------
+
+    private fun hookBlockReadReceipt(classLoader: ClassLoader) {
+        val cls = XposedHelpers.findClassIfExists(CLS_MESSAGES_CONTROLLER, classLoader)
+        if (cls == null) {
+            XLog.e("[隐私] 未找到 $CLS_MESSAGES_CONTROLLER")
+            return
+        }
+
+        safe("不上报已读回执") {
+            XposedBridge.hookAllMethods(cls, "completeReadTask", object : XC_MethodReplacement() {
+                override fun replaceHookedMethod(param: MethodHookParam): Any? {
+                    if (!Prefs.privacyEnabled || !Prefs.blockReadReceipt) return invokeOriginal(param)
+                    HookStats.hit("privacy.readReceipt.blocked")
+                    return null
+                }
+            })
+            XLog.result("隐私", "completeReadTask() 已接管：开启后不上报已读位置")
+        }
+    }
+
+    /**
+     * 放行：手动执行被替换掉的原方法。
+     *
+     * 用 [XC_MethodReplacement] 时必须显式回退，否则「开关关闭」也会顺手把原逻辑吃掉。
+     */
+    private fun invokeOriginal(param: MethodHookParam): Any? =
+        try {
+            XposedBridge.invokeOriginalMethod(param.method, param.thisObject, param.args)
+        } catch (t: Throwable) {
+            XLog.e("回退原方法失败 (${param.method.name}): ${t.message}")
+            null
         }
 }
