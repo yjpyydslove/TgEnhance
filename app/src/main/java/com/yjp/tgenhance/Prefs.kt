@@ -35,12 +35,14 @@ object Prefs {
     const val ENABLE_NET = "enable_net"
     const val BLOCK_PROXY_PROBE = "block_proxy_probe"
     const val NET_TIMEOUT_SCALE = "net_timeout_scale"
+    const val BLOCK_AUTO_DOWNLOAD = "block_auto_download"
 
     // ---------------- 隐私与本地增强 ----------------
     const val ENABLE_PRIVACY = "enable_privacy"
     const val ANTI_RECALL = "anti_recall"
     const val HIDE_TYPING = "hide_typing"
     const val BLOCK_READ_RECEIPT = "block_read_receipt"
+    const val HIDE_ONLINE = "hide_online"
 
     // ---------------- 诊断 ----------------
     const val ENABLE_DIAG = "enable_diag"
@@ -165,12 +167,14 @@ object Prefs {
     val hideStories: Boolean get() = hookBoolean(HIDE_STORIES, false)
 
     val blockProxyProbe: Boolean get() = hookBoolean(BLOCK_PROXY_PROBE, false)
+    val blockAutoDownload: Boolean get() = hookBoolean(BLOCK_AUTO_DOWNLOAD, false)
     val netTimeoutScale: Int
         get() = hookInt(NET_TIMEOUT_SCALE, DEF_TIMEOUT_SCALE, MIN_TIMEOUT_SCALE, MAX_TIMEOUT_SCALE)
 
     val antiRecall: Boolean get() = hookBoolean(ANTI_RECALL, false)
     val hideTyping: Boolean get() = hookBoolean(HIDE_TYPING, false)
     val blockReadReceipt: Boolean get() = hookBoolean(BLOCK_READ_RECEIPT, false)
+    val hideOnline: Boolean get() = hookBoolean(HIDE_ONLINE, false)
 
     /** hook 侧读取回传令牌；为空说明用户还没打开过设置界面。 */
     val diagToken: String get() = hookString(DIAG_TOKEN, "")
@@ -188,8 +192,8 @@ object Prefs {
     /** 参与导入导出的布尔项。 */
     private val BOOLEAN_KEYS = listOf(
         ENABLE_ACCOUNT, ENABLE_UI, SYSTEM_FONT, HIDE_STORIES,
-        ENABLE_NET, BLOCK_PROXY_PROBE,
-        ENABLE_PRIVACY, ANTI_RECALL, HIDE_TYPING, BLOCK_READ_RECEIPT,
+        ENABLE_NET, BLOCK_PROXY_PROBE, BLOCK_AUTO_DOWNLOAD,
+        ENABLE_PRIVACY, ANTI_RECALL, HIDE_TYPING, BLOCK_READ_RECEIPT, HIDE_ONLINE,
         ENABLE_DIAG,
     )
 

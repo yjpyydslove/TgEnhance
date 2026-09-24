@@ -248,6 +248,13 @@ class SettingsActivity : Activity() {
                     "这是为了不再发起那次会暴露真实 IP 的探测。\n\n" +
                     "代理本身仍可正常使用，只是不再预先测速。"
             )
+            switchRow(
+                card,
+                key = Prefs.BLOCK_AUTO_DOWNLOAD,
+                title = "阻止媒体自动下载",
+                summary = "收到的图片、视频、文件不再自动下载，只在手动点击时才下 —— 省流量。",
+                risk = Risk.NONE
+            )
         }
     }
 
@@ -289,6 +296,17 @@ class SettingsActivity : Activity() {
                     "1. 服务器侧仍认为这些消息未读，换设备或重新登录时可能重新出现未读标记。\n" +
                     "2. 频道/群组的未读计数会在服务器侧累积。\n\n" +
                     "本地依然照常标记为已读，不影响你自己看消息。\n\n" +
+                    "确认开启？"
+            )
+            switchRow(
+                card,
+                key = Prefs.HIDE_ONLINE,
+                title = "隐藏在线状态",
+                summary = "不向服务器上报「我在线」，对方看到你一直是离线状态。",
+                risk = Risk.MEDIUM,
+                riskMessage = "开启后，任何人（含联系人、群成员）都看不到你在线，" +
+                    "只会看到「最后上线」停在你开启这项功能之前的某个时间点。\n\n" +
+                    "这会影响别人对你的回复预期 —— 对方可能以为你一直没看手机。\n\n" +
                     "确认开启？"
             )
         }
@@ -979,8 +997,9 @@ class SettingsActivity : Activity() {
         /** 「关闭全部功能」覆盖的开关（诊断日志不动）。 */
         val ALL_FEATURE_KEYS = listOf(
             Prefs.ENABLE_ACCOUNT, Prefs.ENABLE_UI, Prefs.SYSTEM_FONT, Prefs.HIDE_STORIES,
-            Prefs.ENABLE_NET, Prefs.BLOCK_PROXY_PROBE,
-            Prefs.ENABLE_PRIVACY, Prefs.ANTI_RECALL, Prefs.HIDE_TYPING, Prefs.BLOCK_READ_RECEIPT,
+            Prefs.ENABLE_NET, Prefs.BLOCK_PROXY_PROBE, Prefs.BLOCK_AUTO_DOWNLOAD,
+            Prefs.ENABLE_PRIVACY, Prefs.ANTI_RECALL, Prefs.HIDE_TYPING,
+            Prefs.BLOCK_READ_RECEIPT, Prefs.HIDE_ONLINE,
         )
 
         /**
@@ -993,6 +1012,7 @@ class SettingsActivity : Activity() {
             Prefs.ANTI_RECALL to "防撤回",
             Prefs.HIDE_TYPING to "隐藏「正在输入 / 录音中」",
             Prefs.BLOCK_READ_RECEIPT to "不上报已读回执",
+            Prefs.HIDE_ONLINE to "隐藏在线状态",
             Prefs.ENABLE_ACCOUNT to "多账号上限提升",
         )
 
@@ -1004,10 +1024,12 @@ class SettingsActivity : Activity() {
             "ui.typeface.replaced" to "字体替换",
             "ui.stories" to "Stories 显示查询",
             "net.proxyProbe" to "代理连通性探测",
+            "net.autoDownload.blocked" to "拦截自动下载",
             "privacy.typing" to "输入状态发送",
             "privacy.deleteMessages" to "消息删除",
             "privacy.recall.blocked" to "拦截撤回",
             "privacy.readReceipt.blocked" to "拦截已读上报",
+            "privacy.hideOnline" to "隐藏在线状态",
             "prefs.reload" to "配置热更新",
         )
     }

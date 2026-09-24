@@ -58,13 +58,14 @@ object PrivacyHooks {
         XLog.section("隐私与本地增强")
         XLog.i(
             "[隐私] 配置快照：防撤回=${Prefs.antiRecall}、" +
-                "隐藏输入=${Prefs.hideTyping}、不上报已读=${Prefs.blockReadReceipt}" +
-                "（运行期实时读取，改设置无需重启）"
+                "隐藏输入=${Prefs.hideTyping}、不上报已读=${Prefs.blockReadReceipt}、" +
+                "隐藏在线=${Prefs.hideOnline}（运行期实时读取，改设置无需重启）"
         )
 
         hookHideTyping(classLoader)
         hookAntiRecall(classLoader)
         hookBlockReadReceipt(classLoader)
+        hookHideOnline(classLoader)
     }
 
     // ------------------------------------------------------------------
@@ -203,4 +204,53 @@ object PrivacyHooks {
             XLog.e("回退原方法失败 (${param.method.name}): ${t.message}")
             null
         }
+
+    // ------------------------------------------------------------------
+    // 隐藏在线状态
+    // ------------------------------------------------------------------
+
+    /** 字段名对不上时只提示一次，避免每次都打日志刷屏。 */
+    @Volatile
+    private var onlineFieldWarned = false
+
+    /**
+     * 隐藏在线状态（v2.4.0 新增）。
+     *
+     * `MessagesController.updateTimerProc()`（源码 10520）是状态上报的唯一入口，
+     * 它按 `ignoreSetOnline` 决定发哪一种 `TL_account.updateStatus`：
+     *
+     * - `!ignoreSetOnline` → 发 `offline = false`，等于告诉服务器「我在线」
+     * - 否则              → 发 `offline = true`
+     *
+     * 所以只要在它执行前把 `ignoreSetOnline` 顶成 true，就再也不会有人看到你在线，
+     * 对方只会看到「最后上线」停留在很早以前。
+     *
+     * 相比拦网络请求，这种做法的好处是：不碰任何数据包、不需要 hook 高频的
+     * `sendRequest`，也不会让 Telegram 自身逻辑出现状态错乱。
+     */
+    private fun hookHideOnline(classLoader: ClassLoader) {
+        val cls = XposedHelpers.findClassIfExists(CLS_MESSAGES_CONTROLLER, classLoader)
+        if (cls == null) {
+            XLog.e("[隐私] 未找到 $CLS_MESSAGES_CONTROLLER")
+            return
+        }
+
+        safe("隐藏在线状态") {
+            XposedBridge.hookAllMethods(cls, "updateTimerProc", object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    if (!Prefs.privacyEnabled || !Prefs.hideOnline) return
+                    try {
+                        XposedHelpers.setBooleanField(param.thisObject, "ignoreSetOnline", true)
+                        HookStats.hit("privacy.hideOnline")
+                    } catch (t: Throwable) {
+                        if (!onlineFieldWarned) {
+                            onlineFieldWarned = true
+                            XLog.e("[隐私] ignoreSetOnline 字段不可写，隐藏在线状态无效: ${t.message}")
+                        }
+                    }
+                }
+            })
+            XLog.result("隐私", "updateTimerProc() 已接管：开启后不再上报在线状态")
+        }
+    }
 }

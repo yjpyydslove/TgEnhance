@@ -45,9 +45,9 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         HookStats.expect(
             "account.maxCount", "account.expand",
             "ui.typeface.seen", "ui.typeface.replaced", "ui.stories",
-            "net.proxyProbe",
+            "net.proxyProbe", "net.autoDownload.blocked",
             "privacy.typing", "privacy.deleteMessages", "privacy.recall.blocked",
-            "privacy.readReceipt.blocked",
+            "privacy.readReceipt.blocked", "privacy.hideOnline",
             "prefs.reload",
         )
 

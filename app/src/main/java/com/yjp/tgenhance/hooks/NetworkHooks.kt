@@ -27,11 +27,16 @@ import de.robv.android.xposed.XposedHelpers
 object NetworkHooks {
 
     private const val CLS_CONNECTIONS_MANAGER = "org.telegram.tgnet.ConnectionsManager"
+    private const val CLS_DOWNLOAD_CONTROLLER = "org.telegram.messenger.DownloadController"
 
     fun install(classLoader: ClassLoader) {
         XLog.section("网络增强")
-        XLog.i("[网络] 配置快照：阻止代理探测=${Prefs.blockProxyProbe}（运行期实时读取，改设置无需重启）")
+        XLog.i(
+            "[网络] 配置快照：阻止代理探测=${Prefs.blockProxyProbe}、" +
+                "阻止自动下载=${Prefs.blockAutoDownload}（运行期实时读取，改设置无需重启）"
+        )
         hookBlockProxyProbe(classLoader)
+        hookBlockAutoDownload(classLoader)
     }
 
     private fun hookBlockProxyProbe(classLoader: ClassLoader) {
@@ -53,4 +58,66 @@ object NetworkHooks {
             XLog.result("网络", "checkProxy() 已接管：开启后不再发起绕开代理的连通性探测")
         }
     }
+
+    /**
+     * 阻止媒体自动下载（v2.4.0 新增）。
+     *
+     * hook 点：`DownloadController.canDownloadMedia(MessageObject)`（源码 609 行）——
+     * 收到新消息时 Telegram 用它判断「这条媒体要不要自动下下来」。
+     * 恒定返回 false，就只剩用户手动点击才会下载，达到省流量的目的。
+     *
+     * **刻意放行 `sponsoredMedia`**：本功能只为省流量，不碰任何广告 / 赞助内容的处理逻辑，
+     * 与「去除赞助消息」是两件事。
+     */
+    private fun hookBlockAutoDownload(classLoader: ClassLoader) {
+        val cls = XposedHelpers.findClassIfExists(CLS_DOWNLOAD_CONTROLLER, classLoader)
+        if (cls == null) {
+            XLog.e("[网络] 未找到 $CLS_DOWNLOAD_CONTROLLER")
+            return
+        }
+
+        // 只取「单个 MessageObject 参数」的那个重载，另一个 canDownloadMedia(int, long)
+        // 是自动下载预设判断，不在本功能范围内
+        val targets = HookFinder.findMethods(
+            cls,
+            returnType = Boolean::class.javaPrimitiveType,
+            namePrefix = "canDownloadMedia",
+            paramCount = 1
+        ).filter { it.parameterTypes[0].name.endsWith("MessageObject") }
+
+        if (targets.isEmpty()) {
+            XLog.w("[网络] 未定位到 canDownloadMedia(MessageObject)，阻止自动下载不可用")
+            return
+        }
+
+        safe("阻止媒体自动下载") {
+            for (method in targets) {
+                XposedBridge.hookMethod(method, object : XC_MethodReplacement() {
+                    override fun replaceHookedMethod(param: MethodHookParam): Any? {
+                        if (!Prefs.netEnabled || !Prefs.blockAutoDownload) return invokeOriginal(param)
+                        if (isSponsored(param)) return invokeOriginal(param)
+                        HookStats.hit("net.autoDownload.blocked")
+                        return false
+                    }
+                })
+            }
+            XLog.result("网络", "canDownloadMedia() 已接管：开启后媒体只手动下载")
+        }
+    }
+
+    /** 判断这条消息是否为赞助内容；是则保持原行为，不介入。 */
+    private fun isSponsored(param: MethodHookParam): Boolean = try {
+        val message = param.args.getOrNull(0) ?: return false
+        XposedHelpers.getObjectField(message, "sponsoredMedia") != null
+    } catch (t: Throwable) {
+        false
+    }
+
+    private fun invokeOriginal(param: MethodHookParam): Any? =
+        try {
+            XposedBridge.invokeOriginalMethod(param.method, param.thisObject, param.args)
+        } catch (t: Throwable) {
+            XLog.e("回退原方法失败 (${param.method.name}): ${t.message}")
+            null
+        }
 }
