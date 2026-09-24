@@ -138,7 +138,9 @@ object Diagnostics {
         installFailureCheck()?.let { items += it }
         fuzzyMatchCheck()?.let { items += it }
         items += frameworkCheck()
-        lastReport = items
+        // 有问题的项排前面：自检结果动辄十几行，没人会逐行读完，
+        // 把「需要处理的」顶到最上面，比按类别整齐排列更有用
+        lastReport = items.sortedBy { if (it.ok) 1 else 0 }
 
         val okCount = items.count { it.ok }
         val classMissing = items.count { !it.ok && it.member == MISSING_CLASS }

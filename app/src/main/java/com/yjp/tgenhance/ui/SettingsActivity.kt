@@ -524,6 +524,18 @@ class SettingsActivity : Activity() {
         card.addView(body, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         statusView = body
 
+        // 长按卡片正文即可复制报告：临时想发给别人时不用走分享面板
+        body.setOnLongClickListener {
+            val payload = prefs.getString(Prefs.DIAG_SNAPSHOT, null)
+            if (payload.isNullOrBlank()) {
+                toast("还没有可复制的报告")
+            } else {
+                if (copyToClipboard(renderSnapshot(payload).toString())) toast("已复制到剪贴板")
+                else toast("复制失败")
+            }
+            true
+        }
+
         // 反馈问题时不用手抄：一键把配置清单 + 运行报告丢进系统分享面板
         actionRow(card, "分享诊断报告") { shareDiagnostics() }
         trimTrailingDivider(card)
