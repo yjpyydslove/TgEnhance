@@ -70,6 +70,15 @@ object Prefs {
     const val DIAG_SNAPSHOT = "diag_snapshot"
     const val DIAG_SNAPSHOT_AT = "diag_snapshot_at"
 
+    /**
+     * 首启引导是否已完成（v N1）。
+     *
+     * 只属于模块 App 进程的界面状态，不参与导入导出，也不给 hook 端读 ——
+     * 因此**刻意不放进 [com.yjp.tgenhance.core.Features.ALL]**，
+     * 否则它会被当成一个功能开关出现在界面上。
+     */
+    const val FIRST_RUN_DONE = "ui_first_run_done"
+
     // ---------------- 取值范围 ----------------
     const val DEF_MAX_ACCOUNTS = 6
     const val MAX_ACCOUNTS_LIMIT = 16

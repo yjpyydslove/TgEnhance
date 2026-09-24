@@ -13,6 +13,20 @@ enum class FeatureGroup(val title: String, val desc: String) {
     ADS("广告屏蔽", "屏蔽聊天中的推广内容 —— 本模块唯一涉及收入的功能"),
     ADVANCED("高级功能", "进阶选项，已按推荐值配好，一般不用动"),
     DIAG("诊断", "自检与运行状态，反馈问题时用得上"),
+    ;
+
+    /**
+     * 首次打开设置界面时该分组是否收起（v N1）。
+     *
+     * 「高级功能」与「诊断」默认收起：日用版的定位是**装上就忘掉它**，
+     * 而这两组里的东西（强制平板布局、阻止代理探测、详细日志…）
+     * 普通用户既用不上，误开后也较难自己排查。
+     *
+     * 收起的只是初始状态 —— 用户点开一次后会被记下来，之后一直保持展开，
+     * 不会反复跟用户作对。
+     */
+    fun collapsedByDefault(): Boolean =
+        this == ADVANCED || this == DIAG
 }
 
 /** 功能的副作用级别；非 [NONE] 的项在开启前必须弹确认。 */
@@ -47,7 +61,22 @@ data class FeatureSpec(
      * 纯粹是语义标记：界面上两者都是同一行开关，但分组总开关关掉后，
      * 其下所有子项的 Hook 回调都会因为 `Prefs.xxxEnabled` 为 false 而直接放行。
      */
-    val isGroupRoot: Boolean = false
+    val isGroupRoot: Boolean = false,
+    /**
+     * 是否属于「日用配置」（v N1 起）。
+     *
+     * 日用 = 装上就能用、不需要用户先理解每一项在干什么。
+     * 判定标准有且只有两条：
+     *
+     *  1. **零副作用**，或副作用小到用户几乎不会察觉（改字体、收 Stories 入口）；
+     *  2. 不改变「对方能否感知到你」的行为 —— 凡是会影响到聊天对端的，
+     *     一律不进日用配置，必须用户自己开并读过风险说明。
+     *
+     * 因此隐私组、广告屏蔽组里的开关全部不在其中；`SYSTEM_FONT`、
+     * `HIDE_STORIES` 这类纯外观偏好也不在 —— 它们是「用户的选择」，
+     * 不该替用户先选好。
+     */
+    val isDaily: Boolean = false
 )
 
 object Features {
@@ -64,7 +93,9 @@ object Features {
             riskMessage = "该功能会扩容 Telegram 内部的账号实例数组。\n\n" +
                 "在少数版本上，超出原生上限的账号可能出现同步异常或不稳定。\n" +
                 "建议先用默认值 6 观察一段时间，确认稳定后再继续上调。",
-            isGroupRoot = true
+            default = true,
+            isGroupRoot = true,
+            isDaily = true
         ),
 
         // ---------------- 界面与主题 ----------------
@@ -73,7 +104,9 @@ object Features {
             group = FeatureGroup.UI,
             title = "启用界面定制",
             summary = "替换内嵌字体、收起 Stories 入口等界面层面的调整。",
-            isGroupRoot = true
+            default = true,
+            isGroupRoot = true,
+            isDaily = true
         ),
         FeatureSpec(
             key = Prefs.SYSTEM_FONT,
@@ -104,7 +137,8 @@ object Features {
             group = FeatureGroup.ADVANCED,
             default = true,
             title = "关闭更新提示",
-            summary = "不再提示有新版本可用。"
+            summary = "不再提示有新版本可用。",
+            isDaily = true
         ),
 
         // ---------------- 网络 ----------------
@@ -113,7 +147,9 @@ object Features {
             group = FeatureGroup.NETWORK,
             title = "启用网络增强",
             summary = "连接与代理相关的行为调整。",
-            isGroupRoot = true
+            default = true,
+            isGroupRoot = true,
+            isDaily = true
         ),
         FeatureSpec(
             key = Prefs.BLOCK_PROXY_PROBE,
@@ -254,7 +290,8 @@ object Features {
             group = FeatureGroup.ADVANCED,
             title = "详细日志",
             summary = "在 LSPosed 日志里输出启动过程与配置快照。排查问题时才有用。",
-            default = true
+            default = true,
+            isDaily = true
         ),
         FeatureSpec(
             key = Prefs.HIDE_XPOSED,
@@ -272,7 +309,8 @@ object Features {
                 "· 若你的作用域里勾了系统框架，其他应用的 Xposed 检测也会一并被挡，\n" +
                 "  可能与别的模块产生冲突。\n\n" +
                 "确认开启？",
-            isGroupRoot = true
+            isGroupRoot = true,
+            isDaily = true
         ),
 
         // ---------------- 诊断 ----------------
@@ -282,7 +320,8 @@ object Features {
             title = "输出诊断日志",
             summary = "启动时探测关键 Hook 点是否命中，结果写入 LSPosed 日志，便于适配新版本。",
             default = true,
-            isGroupRoot = true
+            isGroupRoot = true,
+            isDaily = true
         ),
     )
 
@@ -310,4 +349,24 @@ object Features {
 
     /** 分组总开关的 key 列表，用于启动日志里打印配置快照。 */
     val groupRootKeys: List<String> = ALL.filter { it.isGroupRoot }.map { it.key }
+
+    // ------------------------------------------------------------------
+    // 日用配置（v N1）
+    // ------------------------------------------------------------------
+
+    /**
+     * 日用配置的键值清单，可直接喂给设置界面的 `applyPreset`。
+     *
+     * 值类型统一成 `Any`（而不是 `Boolean`）是为了能容纳将来的数值项
+     * ——`applyPreset` 本来就按运行时类型分派。
+     *
+     * `MAX_ACCOUNTS` 不在其中：它保持 [Prefs.DEF_MAX_ACCOUNTS] 的默认值即可，
+     * 单独写一个数字反而会在用户已经调过之后被一键改回去。
+     */
+    val dailyEntries: List<Pair<String, Any>> =
+        ALL.filter { it.isDaily }.map { Pair<String, Any>(it.key, true) }
+
+    /** 日用配置涉及的功能标题，用于首启引导里列出来。 */
+    val dailyTitles: List<String> =
+        ALL.filter { it.isDaily }.map { it.title }
 }

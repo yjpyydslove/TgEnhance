@@ -65,11 +65,19 @@ class SettingsActivity : Activity() {
     /** 功能分组的引用，供搜索过滤与折叠使用。 */
     private val sectionRefs = mutableListOf<SectionRef>()
 
-    /** 一个功能分组：标题 + 卡片 + 组内各行。 */
+    /** 一个功能分组：标题 + 说明 + 卡片 + 组内各行。 */
     private class SectionRef(
         val group: FeatureGroup,
         val titleView: TextView,
-        val card: LinearLayout
+        val card: LinearLayout,
+        /**
+         * 分组说明文字。
+         *
+         * 它是独立的一行、不放在卡片里，但**必须跟着分组一起隐藏** ——
+         * 否则收起分组后，页面上会留下一句无主的说明，下面什么都没有。
+         * v N1 引入「高级功能默认收起」后这个问题才显出来。
+         */
+        val descView: TextView
     ) {
         val rows = mutableListOf<RowRef>()
         var collapsed = false
@@ -85,7 +93,6 @@ class SettingsActivity : Activity() {
     ) {
         fun matches(query: String): Boolean = searchable.contains(query)
     }
-
     /** 只显示已开启的功能。 */
     private var onlyEnabled: Boolean = false
 
@@ -170,6 +177,9 @@ class SettingsActivity : Activity() {
         buildPresetSection()
         buildStatusSection()
         buildFooter()
+
+        // 首启引导放在最后：等界面搭好再弹，避免对话框底下是空白页
+        maybeShowDailyIntro()
     }
 
     /**
@@ -344,18 +354,16 @@ class SettingsActivity : Activity() {
             val titleView = sectionTitleView(group.title)
             root.addView(titleView, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
             // 分组说明：标题本身只有两三个字，普通用户未必能判断里面装了什么
-            root.addView(
-                sectionDescView(group.desc),
-                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-            )
+            val descView = sectionDescView(group.desc)
+            root.addView(descView, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
             val card = cardView()
             root.addView(card, cardParams())
 
-            val ref = SectionRef(group, titleView, card)
+            val ref = SectionRef(group, titleView, card, descView)
             // 折叠状态持久化：切换深色模式、旋转屏幕都会重建 Activity，
             // 不记住的话用户每次都被迫重新收起一遍不关心的分组
-            ref.collapsed = prefs.getBoolean(collapseKey(group), false)
+            ref.collapsed = prefs.getBoolean(collapseKey(group), group.collapsedByDefault())
             sectionRefs += ref
 
             // 点分组标题折叠 / 展开
@@ -431,6 +439,10 @@ class SettingsActivity : Activity() {
         var allTotal = 0
 
         for (section in sectionRefs) {
+            // 搜索与「只看已开启」都会无视折叠状态：用户明确在找某一项，
+            // 却因为分组恰好是收起的而看不到结果，只能先猜它在哪个组里 —— 这个交互很别扭。
+            val expanded = !section.collapsed || searching || onlyEnabled
+
             var hitCount = 0
             for (ref in section.rows) {
                 val enabled = prefs.getBoolean(ref.key, ref.default)
@@ -440,7 +452,7 @@ class SettingsActivity : Activity() {
                 val hit = (!searching || ref.matches(query)) && (!onlyEnabled || enabled)
                 if (hit) hitCount++
 
-                val visible = hit && !section.collapsed
+                val visible = hit && expanded
                 for (view in ref.views) {
                     view.visibility = if (visible) View.VISIBLE else View.GONE
                 }
@@ -448,8 +460,11 @@ class SettingsActivity : Activity() {
 
             val hasMatch = hitCount > 0
             section.titleView.visibility = if (hasMatch) View.VISIBLE else View.GONE
+            // 说明跟着卡片一起收放：收起时只留标题那一行，点一下再展开
+            section.descView.visibility =
+                if (hasMatch && expanded) View.VISIBLE else View.GONE
             section.card.visibility =
-                if (hasMatch && !section.collapsed) View.VISIBLE else View.GONE
+                if (hasMatch && expanded) View.VISIBLE else View.GONE
         }
 
         statsView?.text = "已开启 $enabledTotal / 共 $allTotal 项"
@@ -457,8 +472,12 @@ class SettingsActivity : Activity() {
     }
 
     private fun updateSectionTitles() {
+        // 搜索或「只看已开启」时分组被强制摊开，箭头也要跟着显示成展开态，
+        // 否则会出现「箭头是收起的、内容却露着」的矛盾状态
+        val forceExpand = searchQuery.isNotBlank() || onlyEnabled
         for (section in sectionRefs) {
-            val arrow = if (section.collapsed) "▸" else "▾"
+            val expanded = !section.collapsed || forceExpand
+            val arrow = if (expanded) "▾" else "▸"
             section.titleView.text = "${section.group.title}  $arrow"
         }
     }
@@ -472,6 +491,8 @@ class SettingsActivity : Activity() {
      * 预设刻意只组合**低风险**项：带副作用的开关（防撤回、隐藏输入状态、
      * 不上报已读）一律不放进预设，必须由用户单独开启并确认 ——
      * 一键把有代价的功能全打开，不符合本模块的风险提示原则。
+     *
+     * 第一项「日用配置」的清单来自 [Features.dailyEntries]，与首启引导共用同一份数据。
      */
     private fun buildPresetSection() {
         root.addView(
@@ -483,16 +504,8 @@ class SettingsActivity : Activity() {
         root.addView(card, cardParams())
 
         // 放在第一位：新用户不知道该开什么，先给一个「开完就比默认好用」的组合
-        actionRow(card, "推荐配置（新手用这个）") {
-            applyPreset(
-                "推荐配置",
-                listOf(
-                    Prefs.ENABLE_UI to true,
-                    Prefs.SYSTEM_FONT to true,
-                    Prefs.HIDE_STORIES to true,
-                    Prefs.DISABLE_UPDATE_CHECK to true
-                )
-            )
+        actionRow(card, "日用配置（推荐，装上就能用）") {
+            applyPreset("日用配置", Features.dailyEntries)
         }
 
         actionRow(card, "界面清爽：系统字体 + 隐藏 Stories") {
@@ -536,6 +549,75 @@ class SettingsActivity : Activity() {
         actionRow(card, "关闭全部功能", danger = true) { confirmDisableAll() }
 
         trimTrailingDivider(card)
+    }
+
+    /**
+     * 首次打开设置界面时的引导（v N1）。
+     *
+     * 日用版本的前提是「装上就能用」，但模块的配置项默认写在模块自己的
+     * SharedPreferences 里，用户没进过设置页时，界面显示的默认值与
+     * 实际写入的配置是两回事 —— 直接在 [Features] 里把默认值调成 true
+     * 只是让**界面**看起来开着，hook 端读到的仍然是「未设置」。
+     *
+     * 所以这里做一次显式落盘：识别到用户从未进过设置页时，
+     * 弹一次说明，确认后把 [Features.dailyEntries] 真正写进配置。
+     *
+     * 只在第一次弹（用 [Prefs.FIRST_RUN_DONE] 标记），之后无论用户
+     * 选「稍后自己配」还是「应用」，都不再打扰。
+     */
+    private fun maybeShowDailyIntro() {
+        if (prefs.getBoolean(Prefs.FIRST_RUN_DONE, false)) return
+
+        val titles = Features.dailyTitles
+        AlertDialog.Builder(this)
+            .setTitle("欢迎使用 TgEnhance（日用版）")
+            .setMessage(
+                "这是「日用版」：默认配置已经调到适合日常使用，" +
+                    "你不需要逐项理解每个开关。\n\n" +
+                    "现在应用日常配置的话，会打开以下几项：\n\n" +
+                    titles.joinToString("\n") { "· $it" } + "\n\n" +
+                    "隐私与本地增强、广告屏蔽这两组**不会**被打开 —— " +
+                    "它们会改变对方能否感知到你的行为，需要你自己看过说明后决定。\n\n" +
+                    "以后随时可以在上方「快捷配置」里重新应用，或手动逐项调整。"
+            )
+            .setPositiveButton("应用日常配置") { _, _ ->
+                commitFirstRun()
+                applyPreset("日用配置", Features.dailyEntries)
+            }
+            .setNegativeButton("我自己配") { _, _ ->
+                commitFirstRun()
+                // 也要落一次盘：界面上的默认值来自 FeatureSpec.default，
+                // 但 hook 端读到「配置里没有这一项」时会一律按 false 处理。
+                // 不写这一遍，就会出现「开关显示是开的、功能其实没生效」——
+                // 用户只会觉得模块坏了，几乎不可能猜到是配置没落盘。
+                materializeDefaults()
+                toast("已按默认值写入，可逐项调整")
+                recreate()
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    /**
+     * 把 [Features.ALL] 里各项目前的默认值真正写进配置。
+     *
+     * 只写给「配置里还没有」的项，不覆盖用户已有的选择 ——
+     * 这个方法也可能在别处被调用，不该顺手改掉用户调过的东西。
+     */
+    private fun materializeDefaults() {
+        val editor = prefs.edit()
+        for (spec in Features.ALL) {
+            if (!prefs.contains(spec.key)) editor.putBoolean(spec.key, spec.default)
+        }
+        if (!prefs.contains(Prefs.MAX_ACCOUNTS)) {
+            editor.putInt(Prefs.MAX_ACCOUNTS, Prefs.DEF_MAX_ACCOUNTS)
+        }
+        editor.apply()
+    }
+
+    /** 标记首启引导已完成，之后不再弹出。 */
+    private fun commitFirstRun() {
+        prefs.edit().putBoolean(Prefs.FIRST_RUN_DONE, true).apply()
     }
 
     /**
