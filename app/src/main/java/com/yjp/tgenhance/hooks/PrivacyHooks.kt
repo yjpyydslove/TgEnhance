@@ -83,13 +83,13 @@ object PrivacyHooks {
         safe("隐藏输入状态") {
             XposedBridge.hookAllMethods(cls, "sendTyping", object : XC_MethodReplacement() {
                 override fun replaceHookedMethod(param: MethodHookParam): Any? {
-                    if (!Prefs.privacyEnabled || !Prefs.hideTyping) return invokeOriginal(param)
+                    if (!Prefs.privacyEnabled || !Prefs.hideTyping) return invokeOriginal(param) ?: false
                     return try {
                         HookStats.hit("privacy.typing")
                         false
                     } catch (t: Throwable) {
                         XLog.e("[隐藏输入状态] 回调异常，本次放行", t)
-                        invokeOriginal(param)
+                        invokeOriginal(param) ?: false
                     }
                 }
             })

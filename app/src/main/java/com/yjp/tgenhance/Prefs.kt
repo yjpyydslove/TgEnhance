@@ -37,6 +37,7 @@ object Prefs {
     const val BLOCK_PROXY_PROBE = "block_proxy_probe"
     const val NET_TIMEOUT_SCALE = "net_timeout_scale"
     const val BLOCK_AUTO_DOWNLOAD = "block_auto_download"
+    const val DISABLE_AUTOPLAY = "disable_autoplay"
 
     // ---------------- 隐私与本地增强 ----------------
     const val ENABLE_PRIVACY = "enable_privacy"
@@ -229,6 +230,7 @@ object Prefs {
 
     val blockProxyProbe: Boolean get() = hookBoolean(BLOCK_PROXY_PROBE, false)
     val blockAutoDownload: Boolean get() = hookBoolean(BLOCK_AUTO_DOWNLOAD, false)
+    val disableAutoplay: Boolean get() = hookBoolean(DISABLE_AUTOPLAY, false)
     val netTimeoutScale: Int
         get() = hookInt(NET_TIMEOUT_SCALE, DEF_TIMEOUT_SCALE, MIN_TIMEOUT_SCALE, MAX_TIMEOUT_SCALE)
 

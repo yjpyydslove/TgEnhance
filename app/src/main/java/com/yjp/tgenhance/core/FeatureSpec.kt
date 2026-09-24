@@ -111,6 +111,12 @@ object Features {
             title = "阻止媒体自动下载",
             summary = "收到的图片、视频、文件不再自动下载，只在手动点击时才下 —— 省流量。"
         ),
+        FeatureSpec(
+            key = Prefs.DISABLE_AUTOPLAY,
+            group = FeatureGroup.NETWORK,
+            title = "禁用自动播放",
+            summary = "聊天里的 GIF 与视频不再自动播放，省流量也更省电。"
+        ),
 
         // ---------------- 隐私与本地增强 ----------------
         FeatureSpec(

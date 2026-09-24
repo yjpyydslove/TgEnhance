@@ -392,12 +392,13 @@ class SettingsActivity : Activity() {
             )
         }
 
-        actionRow(card, "网络防护：阻止代理连通性探测") {
+        actionRow(card, "网络防护：阻止代理探测 + 禁用自动播放") {
             applyPreset(
                 "网络防护",
                 listOf(
                     Prefs.ENABLE_NET to true,
-                    Prefs.BLOCK_PROXY_PROBE to true
+                    Prefs.BLOCK_PROXY_PROBE to true,
+                    Prefs.DISABLE_AUTOPLAY to true
                 )
             )
         }
@@ -1031,6 +1032,7 @@ class SettingsActivity : Activity() {
             "ui.stories" to "Stories 显示查询",
             "net.proxyProbe" to "代理连通性探测",
             "net.autoDownload.blocked" to "拦截自动下载",
+            "net.autoplay.blocked" to "拦截自动播放",
             "privacy.typing" to "输入状态发送",
             "privacy.deleteMessages" to "消息删除",
             "privacy.recall.blocked" to "拦截撤回",

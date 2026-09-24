@@ -29,15 +29,18 @@ object NetworkHooks {
 
     private const val CLS_CONNECTIONS_MANAGER = "org.telegram.tgnet.ConnectionsManager"
     private const val CLS_DOWNLOAD_CONTROLLER = "org.telegram.messenger.DownloadController"
+    private const val CLS_SHARED_CONFIG = "org.telegram.messenger.SharedConfig"
 
     fun install(classLoader: ClassLoader) {
         XLog.section("网络增强")
         XLog.i(
             "[网络] 配置快照：阻止代理探测=${Prefs.blockProxyProbe}、" +
-                "阻止自动下载=${Prefs.blockAutoDownload}（运行期实时读取，改设置无需重启）"
+                "阻止自动下载=${Prefs.blockAutoDownload}、" +
+                "禁用自动播放=${Prefs.disableAutoplay}（运行期实时读取，改设置无需重启）"
         )
         hookBlockProxyProbe(classLoader)
         hookBlockAutoDownload(classLoader)
+        hookDisableAutoplay(classLoader)
     }
 
     private fun hookBlockProxyProbe(classLoader: ClassLoader) {
@@ -57,6 +60,55 @@ object NetworkHooks {
                 }
             })
             XLog.result("网络", "checkProxy() 已接管：开启后不再发起绕开代理的连通性探测")
+        }
+    }
+
+    /**
+     * 禁用自动播放（v3.4.0 新增）。
+     *
+     * hook 点：`SharedConfig.isAutoplayVideo()` / `isAutoplayGifs()`（源码 740 / 744）——
+     * 两个无参静态布尔方法，聊天里的 GIF 与视频要不要自动播放全看它们。
+     * 恒定返回 false 即可，不必碰任何播放器逻辑。
+     */
+    private fun hookDisableAutoplay(classLoader: ClassLoader) {
+        val cls = XposedHelpers.findClassIfExists(CLS_SHARED_CONFIG, classLoader)
+        if (cls == null) {
+            XLog.e("[网络] 未找到 $CLS_SHARED_CONFIG")
+            return
+        }
+
+        val targets = HookFinder.findMethods(
+            cls,
+            returnType = Boolean::class.javaPrimitiveType,
+            namePrefix = "isAutoplay",
+            paramCount = 0
+        )
+        if (targets.isEmpty()) {
+            XLog.w("[网络] 未定位到 isAutoplay*()，禁用自动播放不可用")
+            return
+        }
+
+        safe("禁用自动播放") {
+            for (method in targets) {
+                XposedBridge.hookMethod(method, object : XC_MethodReplacement() {
+                    override fun replaceHookedMethod(param: MethodHookParam): Any? {
+                        if (!Prefs.netEnabled || !Prefs.disableAutoplay) {
+                            return invokeOriginal(param) ?: false
+                        }
+                        return try {
+                            HookStats.hit("net.autoplay.blocked")
+                            false
+                        } catch (t: Throwable) {
+                            XLog.e("[禁用自动播放] 回调异常，本次放行", t)
+                            invokeOriginal(param) ?: false
+                        }
+                    }
+                })
+            }
+            XLog.result(
+                "网络",
+                "SharedConfig 已接管 ${targets.size} 个 isAutoplay*()：开启后 GIF / 视频不自动播放"
+            )
         }
     }
 
@@ -95,16 +147,18 @@ object NetworkHooks {
             for (method in targets) {
                 XposedBridge.hookMethod(method, object : XC_MethodReplacement() {
                     override fun replaceHookedMethod(param: MethodHookParam): Any? {
-                        if (!Prefs.netEnabled || !Prefs.blockAutoDownload) return invokeOriginal(param)
+                        if (!Prefs.netEnabled || !Prefs.blockAutoDownload) {
+                            return invokeOriginal(param) ?: false
+                        }
                         return try {
-                            if (isSponsored(param)) invokeOriginal(param)
+                            if (isSponsored(param)) invokeOriginal(param) ?: false
                             else {
                                 HookStats.hit("net.autoDownload.blocked")
                                 false
                             }
                         } catch (t: Throwable) {
                             XLog.e("[阻止自动下载] 回调异常，本次放行", t)
-                            invokeOriginal(param)
+                            invokeOriginal(param) ?: false
                         }
                     }
                 })
