@@ -205,7 +205,19 @@ object Features {
                 "确认开启？"
         ),
         FeatureSpec(
-            key = Prefs.HIDE_PHONE,
+            key = Prefs.HIDE_PEER_STATUS,
+            group = FeatureGroup.PRIVACY,
+            title = "隐藏对方的最后上线时间",
+            summary = "对方的在线状态整体显示为「很久以前」，不再透露最后上线于何时。",
+            risk = RiskLevel.MEDIUM,
+            riskMessage = "开启后，对方的状态会**始终**显示为「很久以前」——\n" +
+                "既看不到小绿点，也看不到「最近上线」「一周内」这类时间线索。\n\n" +
+                "与前一项「隐藏对方的在线状态」的区别：\n" +
+                "· 那项只藏掉「此刻在线」，最后上线时间照常显示\n" +
+                "· 这项把时间信息一并藏掉，代价是你自己也判断不出对方多久没来了\n\n" +
+                "确认开启？"
+        ),
+
             group = FeatureGroup.PRIVACY,
             title = "隐藏手机号",
             summary = "资料页里的手机号只保留末 4 位，其余数字用圆点遮住。"

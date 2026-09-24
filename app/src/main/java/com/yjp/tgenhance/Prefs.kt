@@ -47,6 +47,7 @@ object Prefs {
     const val BLOCK_READ_RECEIPT = "block_read_receipt"
     const val HIDE_ONLINE = "hide_online"
     const val HIDE_PEER_ONLINE = "hide_peer_online"
+    const val HIDE_PEER_STATUS = "hide_peer_status"
     const val HIDE_PHONE = "hide_phone"
 
     // ---------------- 广告屏蔽 ----------------
@@ -269,6 +270,7 @@ object Prefs {
     val blockReadReceipt: Boolean get() = hookBoolean(BLOCK_READ_RECEIPT, false)
     val hideOnline: Boolean get() = hookBoolean(HIDE_ONLINE, false)
     val hidePeerOnline: Boolean get() = hookBoolean(HIDE_PEER_ONLINE, false)
+    val hidePeerStatus: Boolean get() = hookBoolean(HIDE_PEER_STATUS, false)
     val hidePhone: Boolean get() = hookBoolean(HIDE_PHONE, false)
 
     /** 反检测：隐藏模块与 Xposed 框架的痕迹。 */

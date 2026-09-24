@@ -379,10 +379,18 @@ object PrivacyHooks {
                             val isOnline = param.args
                                 .filterIsInstance<BooleanArray>()
                                 .firstOrNull() ?: return@guard
-                            if (!isOnline[0]) return@guard
 
+                            // 更强的一档：状态文本整体藏掉，连「最近上线 X 小时前」都不给
+                            if (Prefs.hidePeerStatus) {
+                                isOnline[0] = false
+                                localizedText("ALongTimeAgo")?.let { param.result = it }
+                                HookStats.hit("privacy.peerStatus")
+                                return@guard
+                            }
+
+                            if (!isOnline[0]) return@guard
                             isOnline[0] = false
-                            latelyText()?.let { param.result = it }
+                            localizedText("Lately")?.let { param.result = it }
                             HookStats.hit("privacy.peerOnline")
                         }
                     }
@@ -395,10 +403,15 @@ object PrivacyHooks {
         }
     }
 
-    /** 取「最近上线」的本地化文本；取不到时保留原文，不做无意义的兜底。 */
-    private fun latelyText(): String? = try {
+    /**
+     * 取某个字符串资源的本地化文本。
+     *
+     * 用 Telegram 自己的文案而不是硬编码中文 —— 用户把客户端语言设成英文、
+     * 俄文时，也不会突然冒出一句中文。取不到时返回 null，调用方保留原文。
+     */
+    private fun localizedText(key: String): String? = try {
         val cls = localeControllerClass ?: return null
-        XposedHelpers.callStaticMethod(cls, "getString", "Lately", 0) as? String
+        XposedHelpers.callStaticMethod(cls, "getString", key, 0) as? String
     } catch (t: Throwable) {
         null
     }

@@ -52,6 +52,7 @@ object HookCatalog {
         HookPoint("privacy.readReceipt.blocked", "拦截已读上报"),
         HookPoint("privacy.hideOnline", "隐藏在线状态"),
         HookPoint("privacy.peerOnline", "隐藏对方在线"),
+        HookPoint("privacy.peerStatus", "隐藏对方上线时间"),
         HookPoint("privacy.phoneMask", "手机号遮罩"),
 
         // 广告屏蔽
