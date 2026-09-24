@@ -37,6 +37,10 @@ object HookFinder {
         namePrefix: String? = null,
         nameContains: String? = null,
         paramCount: Int? = null,
+        /** 参数个数下限（含）。用于应对「重载增删」这类改动。 */
+        minParamCount: Int? = null,
+        /** 参数个数上限（含）。 */
+        maxParamCount: Int? = null,
         publicOnly: Boolean = false
     ): List<Method> {
         val out = ArrayList<Method>()
@@ -50,6 +54,8 @@ object HookFinder {
             if (publicOnly && !Modifier.isPublic(m.modifiers)) continue
             if (returnType != null && m.returnType != returnType) continue
             if (paramCount != null && m.parameterCount != paramCount) continue
+            if (minParamCount != null && m.parameterCount < minParamCount) continue
+            if (maxParamCount != null && m.parameterCount > maxParamCount) continue
 
             val name = m.name
             if (namePrefix != null && !name.startsWith(namePrefix, ignoreCase = true)) continue
@@ -74,19 +80,28 @@ object HookFinder {
         returnType: Class<*>? = null,
         namePrefix: String? = null,
         nameContains: String? = null,
-        paramCount: Int? = null
+        paramCount: Int? = null,
+        minParamCount: Int? = null,
+        maxParamCount: Int? = null
     ): List<Method> {
         val exact = explicitNames
             .mapNotNull { name ->
-                findMethods(cls, returnType = returnType, paramCount = paramCount)
-                    .firstOrNull { it.name.equals(name, ignoreCase = true) }
+                findMethods(
+                    cls,
+                    returnType = returnType,
+                    paramCount = paramCount,
+                    minParamCount = minParamCount,
+                    maxParamCount = maxParamCount
+                ).firstOrNull { it.name.equals(name, ignoreCase = true) }
             }
         val fuzzy = findMethods(
             cls,
             returnType = returnType,
             namePrefix = namePrefix,
             nameContains = nameContains,
-            paramCount = paramCount
+            paramCount = paramCount,
+            minParamCount = minParamCount,
+            maxParamCount = maxParamCount
         )
 
         val exactNames = exact.mapTo(HashSet()) { it.name.lowercase(Locale.ROOT) }

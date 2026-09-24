@@ -94,7 +94,10 @@ object PrivacyHooks {
             cls,
             explicitNames = listOf("sendTyping"),
             returnType = Boolean::class.javaPrimitiveType,
-            nameContains = "typing"
+            nameContains = "typing",
+            // sendTyping 至少带 dialogId + threadId + action 三个参数；
+            // 加下限是为了排除同名但签名不同的辅助方法
+            minParamCount = 3
         )
         if (targets.isEmpty()) {
             XLog.w("[隐私] 未定位到 sendTyping，隐藏输入状态不可用")
@@ -142,7 +145,8 @@ object PrivacyHooks {
         val targets = HookFinder.match(
             cls,
             explicitNames = listOf("deleteMessages"),
-            nameContains = "deletemessage"
+            nameContains = "deletemessage",
+            minParamCount = 2
         )
         if (targets.isEmpty()) {
             XLog.w("[隐私] 未定位到 deleteMessages，防撤回不可用")
