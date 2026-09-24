@@ -14,9 +14,13 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.RippleDrawable
 import android.os.Bundle
+import android.text.Editable
+import android.text.InputType
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -50,6 +54,27 @@ import com.yjp.tgenhance.diag.DiagProtocol
 class SettingsActivity : Activity() {
 
     private lateinit var root: LinearLayout
+
+    /** 搜索关键字（小写）；空串表示不过滤。 */
+    private var searchQuery: String = ""
+
+    /** 功能分组的引用，供搜索过滤与折叠使用。 */
+    private val sectionRefs = mutableListOf<SectionRef>()
+
+    /** 一个功能分组：标题 + 卡片 + 组内各行。 */
+    private class SectionRef(
+        val group: FeatureGroup,
+        val titleView: TextView,
+        val card: LinearLayout
+    ) {
+        val rows = mutableListOf<RowRef>()
+        var collapsed = false
+    }
+
+    /** 组内一行（开关行或滑条行）+ 它下方的分割线：过滤时需要一起收起。 */
+    private class RowRef(val searchable: String, val views: List<View>) {
+        fun matches(query: String): Boolean = searchable.contains(query)
+    }
 
     /** 「运行状态」卡片正文；收到 hook 端回传时直接刷新它。 */
     private var statusView: TextView? = null
@@ -94,13 +119,60 @@ class SettingsActivity : Activity() {
             isFillViewport = true
             addView(content, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         }
-        setContentView(scroll)
+
+        // 搜索框固定在顶部（不随内容滚动），和 Telegram 的设置页一致
+        val shell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(color(R.color.bg))
+        }
+        shell.addView(buildSearchBar(), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        shell.addView(scroll, LinearLayout.LayoutParams(MATCH_PARENT, 0).apply { weight = 1f })
+        setContentView(shell)
 
         buildHeader()
         buildFeatureSections()
         buildPresetSection()
         buildStatusSection()
         buildFooter()
+    }
+
+    /**
+     * 顶部搜索框。
+     *
+     * 功能变多以后，找某一项要一路滑下去；这里按标题与说明做即时过滤，
+     * 并把过滤后为空的整组一起隐藏。
+     */
+    private fun buildSearchBar(): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(8))
+        }
+
+        val input = EditText(this).apply {
+            hint = "搜索功能"
+            textSize = 15f
+            setTextColor(color(R.color.text_primary))
+            setHintTextColor(color(R.color.text_secondary))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(10).toFloat()
+                setColor(color(R.color.section_gap))
+            }
+            setPadding(dp(14), dp(11), dp(14), dp(11))
+            isSingleLine = true
+            inputType = InputType.TYPE_CLASS_TEXT
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+                override fun afterTextChanged(s: Editable?) {
+                    searchQuery = s?.toString().orEmpty()
+                    applyFilter()
+                }
+            })
+        }
+
+        box.addView(input, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        return box
     }
 
     override fun onResume() {
@@ -198,16 +270,23 @@ class SettingsActivity : Activity() {
             val specs = Features.byGroup[group] ?: continue
             if (specs.isEmpty()) continue
 
-            root.addView(
-                sectionTitleView(group.title),
-                LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-            )
+            val titleView = sectionTitleView(group.title)
+            root.addView(titleView, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
             val card = cardView()
             root.addView(card, cardParams())
 
+            val ref = SectionRef(group, titleView, card)
+            sectionRefs += ref
+
+            // 点分组标题折叠 / 展开
+            titleView.setOnClickListener {
+                ref.collapsed = !ref.collapsed
+                applyFilter()
+            }
+
             for (spec in specs) {
-                switchRow(
+                val row = switchRow(
                     card,
                     key = spec.key,
                     title = spec.title,
@@ -216,9 +295,13 @@ class SettingsActivity : Activity() {
                     riskMessage = spec.riskMessage,
                     default = spec.default
                 )
+                ref.rows += RowRef(
+                    searchable = (spec.title + " " + spec.summary).lowercase(),
+                    views = listOf(row)
+                )
 
                 if (spec.key == Prefs.ENABLE_ACCOUNT) {
-                    sliderRow(
+                    val slider = sliderRow(
                         card,
                         key = Prefs.MAX_ACCOUNTS,
                         title = "最大账号数",
@@ -228,10 +311,57 @@ class SettingsActivity : Activity() {
                         max = Prefs.MAX_ACCOUNTS_LIMIT,
                         default = Prefs.DEF_MAX_ACCOUNTS
                     )
+                    ref.rows += RowRef(
+                        searchable = "最大账号数 账号数量上限 账号个数",
+                        views = listOf(slider)
+                    )
                 }
             }
 
             trimTrailingDivider(card)
+        }
+
+        updateSectionTitles()
+    }
+
+    // ------------------------------------------------------------------
+    // 搜索过滤 / 分组折叠
+    // ------------------------------------------------------------------
+
+    /**
+     * 按当前关键字与折叠状态刷新可见性。
+     *
+     * 过滤掉的分组整组隐藏（连标题一起）—— 否则搜「字体」时会剩下一堆空卡片。
+     * 折叠的分组只隐藏卡片、保留标题，方便点回去展开。
+     */
+    private fun applyFilter() {
+        val query = searchQuery.trim().lowercase()
+        val searching = query.isNotEmpty()
+
+        for (section in sectionRefs) {
+            var hitCount = 0
+            for (ref in section.rows) {
+                val hit = !searching || ref.matches(query)
+                if (hit) hitCount++
+                val visible = hit && !section.collapsed
+                for (view in ref.views) {
+                    view.visibility = if (visible) View.VISIBLE else View.GONE
+                }
+            }
+
+            val hasMatch = hitCount > 0
+            section.titleView.visibility = if (hasMatch) View.VISIBLE else View.GONE
+            section.card.visibility =
+                if (hasMatch && !section.collapsed) View.VISIBLE else View.GONE
+        }
+
+        updateSectionTitles()
+    }
+
+    private fun updateSectionTitles() {
+        for (section in sectionRefs) {
+            val arrow = if (section.collapsed) "▸" else "▾"
+            section.titleView.text = "${section.group.title}  $arrow"
         }
     }
 
@@ -450,6 +580,8 @@ class SettingsActivity : Activity() {
         danger: Boolean = false,
         onClick: () -> Unit
     ) {
+        val wrap = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
         val row = TextView(this).apply {
             text = title
             textSize = 16f
@@ -461,8 +593,10 @@ class SettingsActivity : Activity() {
             background = RippleDrawable(ColorStateList.valueOf(color(R.color.ripple)), null, null)
             setOnClickListener { onClick() }
         }
-        parent.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        parent.addDivider()
+
+        wrap.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        wrap.addDivider()
+        parent.addView(wrap, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
     }
 
     private fun applyPreset(name: String, entries: List<Pair<String, Any>>) {
@@ -602,11 +736,17 @@ class SettingsActivity : Activity() {
     // 行
     // ------------------------------------------------------------------
 
-    /** 删掉卡片最后一个子项后的多余分割线（TG 分组末尾没有线）。 */
+    /**
+     * 删掉卡片最后一个子项后的多余分割线（TG 分组末尾没有线）。
+     *
+     * 行是「行 + 分割线」的容器，所以要往里拆一层看。
+     */
     private fun trimTrailingDivider(card: LinearLayout) {
         if (card.childCount == 0) return
-        val last = card.getChildAt(card.childCount - 1)
-        if (last.tag == TAG_DIVIDER) card.removeViewAt(card.childCount - 1)
+        val last = card.getChildAt(card.childCount - 1) as? LinearLayout ?: return
+        if (last.childCount == 0) return
+        val divider = last.getChildAt(last.childCount - 1)
+        if (divider.tag == TAG_DIVIDER) last.removeViewAt(last.childCount - 1)
     }
 
     private fun switchRow(
@@ -617,7 +757,11 @@ class SettingsActivity : Activity() {
         risk: RiskLevel = RiskLevel.NONE,
         riskMessage: String? = null,
         default: Boolean = false
-    ) {
+    ): View {
+        // 行与它下面的分割线包在同一个容器里：搜索过滤时一起隐藏，
+        // 否则会剩下一堆悬空的横线
+        val wrap = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -637,8 +781,10 @@ class SettingsActivity : Activity() {
         )
         bindToggle(sw, key, risk, riskMessage, title)
 
-        parent.addView(row)
-        parent.addDivider()
+        wrap.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        wrap.addDivider()
+        parent.addView(wrap, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        return wrap
     }
 
     private fun sliderRow(
@@ -649,7 +795,7 @@ class SettingsActivity : Activity() {
         min: Int,
         max: Int,
         default: Int
-    ) {
+    ): View {
         val current = prefs.getInt(key, default).coerceIn(min, max)
 
         val box = LinearLayout(this).apply {
@@ -693,8 +839,11 @@ class SettingsActivity : Activity() {
             override fun onStopTrackingTouch(seekBar: SeekBar) = Unit
         })
 
-        parent.addView(box)
-        parent.addDivider()
+        val wrap = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        wrap.addView(box, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        wrap.addDivider()
+        parent.addView(wrap, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        return wrap
     }
 
     /** 绑定开关与配置项；带风险的项在开启前弹确认，取消则静默回滚。 */
