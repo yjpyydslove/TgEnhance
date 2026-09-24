@@ -57,6 +57,17 @@ object Prefs {
     // ---------------- 高级功能 ----------------
     const val VERBOSE_LOG = "verbose_log"
 
+    /**
+     * 隐藏模块自身的桌面图标（v N1.1）。
+     *
+     * 注意：这个 key **不是**给 hook 端读的 —— 它作用于模块 App 自己，
+     * 由 [com.yjp.tgenhance.ui.SettingsActivity] 在写入后立即调用
+     * `PackageManager.setComponentEnabledSetting` 生效。
+     * 放进 [com.yjp.tgenhance.core.Features.ALL] 只是为了让它出现在界面上、
+     * 参与导入导出，hook 端读到它也无副作用（它不控制任何 Hook）。
+     */
+    const val HIDE_LAUNCHER_ICON = "hide_launcher_icon"
+
     // ---------------- 反检测 ----------------
     const val HIDE_XPOSED = "hide_xposed"
 

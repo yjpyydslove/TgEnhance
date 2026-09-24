@@ -3,6 +3,7 @@ package com.yjp.tgenhance.diag
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.XLog
 import com.yjp.tgenhance.core.Features
+import com.yjp.tgenhance.core.OsCompat
 import com.yjp.tgenhance.hooks.ClientProfileDetector
 import com.yjp.tgenhance.hooks.ConflictWatch
 import com.yjp.tgenhance.hooks.HookFinder
@@ -95,6 +96,19 @@ object Diagnostics {
         "hasStories", "hasUnreadStories", "hasHiddenStories", "hasSelfStories"
     )
 
+    /**
+     * 设置页的列表构建与点击方法（v N1.1，仅供探测）。
+     *
+     * 两个版本线的命名不同，这里都列上，谁的命中结果就是谁：
+     *  - 旧版（rowInfo 时代）：`fillItems` 不在 Fragment 上，条目用 `addRow`
+     *  - 新版（`UItem` + `UniversalAdapter`）：`fillItems(ArrayList, UniversalAdapter)`
+     *
+     * `onClick` / `onLongClick` 是注入入口点击的挂载点。
+     */
+    private val SETTINGS_METHODS = listOf(
+        "fillItems", "onClick", "onLongClick", "addRow", "createView"
+    )
+
     @Volatile
     private var lastReport: List<CheckItem> = emptyList()
 
@@ -118,6 +132,11 @@ object Diagnostics {
                     if (outdated) add("客户端版本偏旧：部分功能在本版上不可用")
                     if (profile.launchActivity == null) add("未识别到主 Activity：配置热更新退回系统 Activity")
                     if (profile.storiesController == null) add("未识别到 StoriesController：隐藏 Stories 不可用")
+                    // 设置页探测结果（v N1.1）：只作为信息写出来，目前的版本
+                    // 还不会往设置页里插条目，所以「没找到」不是问题、不影响 ok
+                    if (profile.settingsFragment == null) {
+                        add("未识别到设置页类：将来若做设置页入口注入，本客户端不适用")
+                    }
                 }
             )
             // 用解析出的真实类路径做自检，而不是写死路径
@@ -126,6 +145,11 @@ object Diagnostics {
             }
             profile.storiesController?.let {
                 items += check(classLoader, Target(it, STORIES_METHODS))
+            }
+            // 设置页单独成项：注入入口要挂到它的列表构建方法上，
+            // 先把「方法在不在、叫什么」探出来，将来做注入时不必再猜
+            profile.settingsFragment?.let {
+                items += check(classLoader, Target(it, SETTINGS_METHODS))
             }
         }
 
@@ -237,8 +261,16 @@ object Diagnostics {
      * 特定 ROM 的类加载差异或系统版本行为变化，光看客户端版本判断不出来。
      * 直接写进诊断报告，省一轮来回问。
      */
+    /**
+     * 设备与系统环境摘要（v7.8.0 起）。
+     *
+     * v N1.1 起改用 [OsCompat.summary]：除版本号外，把几个**会影响本模块行为**
+     * 的系统分支判定一起写出来（接收器导出标志、强制全屏、隐式意图限制）。
+     * 这几个分支此前只存在于代码里，用户反馈问题时没法说明自己落在哪一支 ——
+     * 现在报告里直接带着，一眼就能对上。
+     */
     private fun environmentSummary(): String = try {
-        "Android ${android.os.Build.VERSION.RELEASE}(API ${android.os.Build.VERSION.SDK_INT})" +
+        OsCompat.summary() +
             " · ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
     } catch (t: Throwable) {
         "环境未知"

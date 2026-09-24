@@ -61,7 +61,10 @@ object HookCatalog {
         // 反检测
         HookPoint("stealth.classLoad", "拒绝框架类查询"),
         HookPoint("stealth.stackTrace", "剔除框架堆栈帧"),
+        HookPoint("stealth.allStackTraces", "剔除全线程堆栈帧"),
+        HookPoint("stealth.printStack", "剔除打印栈帧"),
         HookPoint("stealth.pkgQuery", "拒绝模块包名查询"),
+        HookPoint("stealth.appInfo", "拒绝模块应用信息查询"),
         HookPoint("stealth.pkgList", "清除包列表条目"),
         HookPoint("stealth.modifiers", "抹除 native 标志"),
 

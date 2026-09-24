@@ -60,7 +60,10 @@ object StealthHooks {
         hookClassLoader(classLoader)
         hookStackTrace(classLoader, "java.lang.Throwable")
         hookStackTrace(classLoader, "java.lang.Thread")
+        hookAllStackTraces(classLoader)
+        hookStackTracePrinting(classLoader)
         hookPackageQuery(classLoader)
+        hookApplicationInfoQuery(classLoader)
         hookInstalledPackages(classLoader)
         hookMethodModifiers(classLoader)
     }
@@ -145,6 +148,108 @@ object StealthHooks {
         }
     }
 
+    /**
+     * 接管 `Thread.getAllStackTraces()`（v N1.1）。
+     *
+     * 前一项只挡了「取当前线程的栈」，但检测方更愿意扫**所有线程**的栈 ——
+     * 一次调用就能看到全部线程上有没有框架帧，比逐个线程去取高效得多，
+     * 收获也更大（我们的 hook 回调可能停在任何一个线程上）。
+     *
+     * 返回类型是 `Map<Thread, StackTraceElement[]>`，需要重建这个 map。
+     * 只在真的剔掉了东西时才替换结果，否则原样放行 ——
+     * 每次都造一个新 map 会拖慢调用方（它可能是高频路径）。
+     */
+    private fun hookAllStackTraces(classLoader: ClassLoader) {
+        val cls = XposedHelpers.findClassIfExists("java.lang.Thread", classLoader) ?: return
+
+        safe("全线程堆栈隐身") {
+            HookInstaller.hookAllByName(cls, "getAllStackTraces", object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    guard("全线程堆栈隐身") {
+                        if (!Prefs.hideXposed) return@guard
+                        val raw = param.result as? Map<*, *> ?: return@guard
+                        if (raw.isEmpty()) return@guard
+
+                        var removed = 0
+                        val cleaned = LinkedHashMap<Any?, Any?>(raw.size)
+                        for ((thread, frames) in raw) {
+                            if (frames !is Array<*>) {
+                                cleaned[thread] = frames
+                                continue
+                            }
+                            val kept = frames.filterNot { hiddenFrame(it) }
+                            removed += frames.size - kept.size
+                            cleaned[thread] = kept.toTypedArray()
+                        }
+                        if (removed == 0) return@guard
+
+                        HookStats.hit("stealth.allStackTraces")
+                        param.result = cleaned
+                    }
+                }
+            })
+            XLog.result("反检测", "Thread.getAllStackTraces() 已接管：各线程的框架帧将被剔除")
+        }
+    }
+
+    /**
+     * 接管 `Throwable.getOurStackTrace()`（v N1.1）。
+     *
+     * 为什么不是直接拦 `printStackTrace`：
+     *
+     * `printStackTrace` 有三个重载（无参 / `PrintStream` / `PrintWriter`），
+     * 拦截它们要么得替换输出流（会破坏调用方自己的输出），要么得逐个重载处理。
+     * 而它们**最终都走同一个私有方法** `getOurStackTrace()` 去取栈快照 ——
+     * 拦这一个点，就同时覆盖了三条路径，也包括 `printStackTrace` 内部的递归
+     * （它打印 cause 时会再次取栈）。
+     *
+     * ### 会不会误伤
+     *
+     * `getStackTrace()`（公开的那个）**不经过** `getOurStackTrace()` ——
+     * 它自己有一份 clone 逻辑，所以前面 [hookStackTrace] 那条仍然必须保留，
+     * 两者互不替代。
+     *
+     * 这个方法在 ART 里一直存在（`libcore` 的 `Throwable` 实现），
+     * 但毕竟不是公开 API，所以用 `findAndHookMethod` 探测式挂载：
+     * 找不到就安静跳过，不影响其余反检测项。
+     */
+    private fun hookStackTracePrinting(classLoader: ClassLoader) {
+        val cls = XposedHelpers.findClassIfExists("java.lang.Throwable", classLoader) ?: return
+
+        safe("堆栈打印隐身") {
+            try {
+                XposedHelpers.findAndHookMethod(
+                    cls, "getOurStackTrace", object : XC_MethodHook() {
+                        override fun afterHookedMethod(param: MethodHookParam) {
+                            guard("堆栈打印隐身") {
+                                if (!Prefs.hideXposed) return@guard
+                                val raw = param.result as? Array<*> ?: return@guard
+                                val cleaned = raw.filterNot { hiddenFrame(it) }
+                                if (cleaned.size == raw.size) return@guard
+
+                                HookStats.hit("stealth.printStack")
+                                param.result = cleaned.toTypedArray()
+                            }
+                        }
+                    }
+                )
+                XLog.result("反检测", "Throwable.getOurStackTrace() 已接管：printStackTrace 输出中的框架帧将被剔除")
+            } catch (t: Throwable) {
+                // 该方法是 ART 内部实现，不是公开 API；某些 ROM 上可能没有。
+                // 这里只降级，不报错 —— 前面那两条 getStackTrace 拦截仍在生效。
+                XLog.i("[反检测] 未找到 Throwable.getOurStackTrace()，printStackTrace 的框架帧不会被剔除")
+            }
+        }
+    }
+
+    /** 判断一个 `StackTraceElement` 是否属于需要隐藏的框架帧。 */
+    private fun hiddenFrame(frame: Any?): Boolean = try {
+        val element = frame as? StackTraceElement ?: return false
+        hiddenByPrefix(element.className)
+    } catch (t: Throwable) {
+        false
+    }
+
     // ------------------------------------------------------------------
     // 3. 包名隐身
     // ------------------------------------------------------------------
@@ -177,6 +282,39 @@ object StealthHooks {
     // ------------------------------------------------------------------
     // 3.5 包列表隐身
     // ------------------------------------------------------------------
+
+    /**
+     * 拦截针对模块包的 `getApplicationInfo`（v N1.1）。
+     *
+     * `getPackageInfo` 返回的是 `PackageInfo`，而**读 meta-data 更常用的是
+     * `getApplicationInfo`** —— 检测方查 `xposedmodule` / `xposedminversion`
+     * 这两个键，是「这是不是一个 Xposed 模块」最直接的证据，
+     * 而且这个查询不经过 `getPackageInfo`，前面那条拦不到。
+     *
+     * 与 `getPackageInfo` 一样，抛 `NameNotFoundException`。
+     * 注意 `getApplicationInfo` 在 API 33+ 有一个三参重载
+     * （带 `ApplicationInfoFlags`），`hookAllByName` 会一并接管。
+     */
+    private fun hookApplicationInfoQuery(classLoader: ClassLoader) {
+        val cls = XposedHelpers.findClassIfExists(
+            "android.app.ApplicationPackageManager", classLoader
+        )
+        if (cls == null) return
+
+        safe("应用信息隐身") {
+            val hooked = HookInstaller.hookAllByName(cls, "getApplicationInfo", object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    if (!Prefs.hideXposed) return
+                    // 第一个参数在所有重载里都是包名
+                    val pkg = param.args.getOrNull(0) as? String ?: return
+                    if (pkg != Prefs.MODULE_PKG) return
+                    HookStats.hit("stealth.appInfo")
+                    throw PackageManager.NameNotFoundException(pkg)
+                }
+            })
+            XLog.result("反检测", "getApplicationInfo() 已接管 $hooked 处：模块的 meta-data 不会被读到")
+        }
+    }
 
     /**
      * 从「已安装应用列表」里剔除本模块（v5.6.0）。

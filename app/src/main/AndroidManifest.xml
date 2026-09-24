@@ -36,11 +36,41 @@
             android:exported="true"
             android:label="@string/app_name"
             android:configChanges="orientation|screenSize|keyboardHidden">
+            <!--
+              不带 LAUNCHER 的显式 action：桌面图标（下面的 alias）被隐藏后，
+              仍需要一个**不经过桌面**的入口。
+              LSPosed 管理器、以及将来从 Telegram 设置页注入的入口，
+              都用显式 intent 指定这个 action 打开设置页 ——
+              它不依赖任何被禁用的组件，所以隐藏图标后一定可用。
+            -->
+            <intent-filter>
+                <action android:name="com.yjp.tgenhance.action.SETTINGS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          ============ 桌面入口（可隐藏） ============
+          
+          用一个 activity-alias 承载 LAUNCHER 图标，而不是直接标在
+          SettingsActivity 上 —— 这样「隐藏图标」只要禁用这个 alias，
+          设置页本身（连同上一条的显式 action）完全不受影响。
+          
+          如果直接禁用 SettingsActivity 的 LAUNCHER 组件，
+          连它自己都会被停掉，反而连 LSPosed 管理器都打不开了。
+        -->
+        <activity-alias
+            android:name=".ui.LauncherAlias"
+            android:targetActivity=".ui.SettingsActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:icon="@drawable/ic_launcher"
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
 
     </application>
 

@@ -140,6 +140,21 @@ object Features {
             summary = "不再提示有新版本可用。",
             isDaily = true
         ),
+        FeatureSpec(
+            key = Prefs.HIDE_LAUNCHER_ICON,
+            group = FeatureGroup.ADVANCED,
+            title = "隐藏模块桌面图标",
+            summary = "桌面不再显示本模块图标 —— 想更干净、或不想让人看到装了增强模块时用。",
+            risk = RiskLevel.MEDIUM,
+            riskMessage = "开启后桌面上的模块图标会消失（Telegram 不受影响）。\n\n" +
+                "之后想再打开设置页，有三个入口，任何一个都可用：\n\n" +
+                "1. 本对话框底部会给出一个「临时恢复图标」的入口 —— 关掉这个开关即可\n" +
+                "2. LSPosed 管理器 → 模块 → 找到本模块 → 点开\n" +
+                "3. 用任意能发送自定义 intent 的工具，打开\n" +
+                "   com.yjp.tgenhance.action.SETTINGS\n\n" +
+                "注意：桌面图标只是「看不见」，应用本身并未被卸载或停用。\n\n" +
+                "确认隐藏？"
+        ),
 
         // ---------------- 网络 ----------------
         FeatureSpec(

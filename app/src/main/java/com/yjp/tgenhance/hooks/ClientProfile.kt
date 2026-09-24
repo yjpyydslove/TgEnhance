@@ -29,7 +29,16 @@ data class ClientProfile(
     /** 实际存在的主 Activity 类名；一个都没找到时为 null。 */
     val launchActivity: String?,
     /** 实际存在的 StoriesController 类名；一个都没找到时为 null。 */
-    val storiesController: String?
+    val storiesController: String?,
+    /**
+     * 实际存在的设置页 Fragment 类名；一个都没找到时为 null（v N1.1）。
+     *
+     * 仅用于探测 —— 目前**不**往 TG 设置页里插条目，只用来判断
+     * 「这个客户端适不适合做注入」。列表构建方式在各版本 / fork 之间
+     * 差异太大（旧版用 `rowInfo`，新版用 `UItem` + `UniversalAdapter`），
+     * 贸然注入会在部分客户端上把设置页画错，得不偿失。
+     */
+    val settingsFragment: String?
 ) {
     /** 供日志与界面展示的一行摘要。 */
     fun summary(): String = buildString {
@@ -107,6 +116,19 @@ object ClientProfileDetector {
         "org.telegram.messenger.StoriesController",
     )
 
+    /**
+     * 设置页 Fragment 候选（v N1.1，仅供探测）。
+     *
+     * 官方版一直是 `org.telegram.ui.SettingsActivity`（名字叫 Activity，
+     * 实际继承 `BaseFragment`，是 Telegram 早期命名留下的历史包袱）。
+     * fork 里可能被挪走，所以留几个候选。
+     */
+    private val SETTINGS_CANDIDATES = listOf(
+        "org.telegram.ui.SettingsActivity",
+        "org.telegram.ui.Settings.SettingsActivity",
+        "tw.nekogram.settings.NekoSettingsActivity",
+    )
+
     @Volatile
     private var cached: ClientProfile? = null
 
@@ -118,11 +140,16 @@ object ClientProfileDetector {
             versionName = resolveVersionName(packageName),
             kind = resolveKind(packageName),
             launchActivity = resolveLaunchActivity(classLoader, packageName),
-            storiesController = resolveFirst(classLoader, STORIES_CANDIDATES)
+            storiesController = resolveFirst(classLoader, STORIES_CANDIDATES),
+            settingsFragment = resolveFirst(classLoader, SETTINGS_CANDIDATES)
         )
         cached = profile
         return profile
     }
+
+    /** 解析出实际存在的设置页类；找不到时返回 null。 */
+    fun settingsFragmentClass(classLoader: ClassLoader): Class<*>? =
+        resolveFirst(classLoader, SETTINGS_CANDIDATES)?.let { findClass(it, classLoader) }
 
     /** 最近一次识别结果。 */
     fun current(): ClientProfile? = cached

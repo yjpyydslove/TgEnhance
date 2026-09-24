@@ -30,8 +30,10 @@ import android.widget.TextView
 import android.widget.Toast
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.R
+import com.yjp.tgenhance.XLog
 import com.yjp.tgenhance.core.FeatureGroup
 import com.yjp.tgenhance.core.Features
+import com.yjp.tgenhance.core.OsCompat
 import com.yjp.tgenhance.core.RiskLevel
 import com.yjp.tgenhance.diag.DiagProtocol
 import com.yjp.tgenhance.hooks.HookCatalog
@@ -136,6 +138,10 @@ class SettingsActivity : Activity() {
         Prefs.initForApp(this)
         // 回传令牌必须先存在，hook 端才有东西可带
         Prefs.ensureDiagToken()
+        // 同步桌面图标的显示状态。每次启动都做：换机、恢复备份、
+        // 或上一次切换失败时，系统里的实际状态可能与配置不一致，
+        // 这里顺手纠回来，避免出现「开关显示开着、图标其实还在」。
+        LauncherIcon.apply(this)
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -258,10 +264,39 @@ class SettingsActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        registerDiagReceiver()
+    }
+
+    /**
+     * 注册诊断回传接收器。
+     *
+     * Android 14 起，**非系统广播**的动态接收器必须显式声明导出标志，
+     * 否则抛 `SecurityException`；而那个带标志的三参数重载在 Android 13
+     * 及以下并不存在 —— 直接调用会 `NoSuchMethodError`。
+     *
+     * 这里此前一直硬编码三参数版本，异常又被 `catch (Throwable)` 吞掉，
+     * 结果是：**Android 13 及以下「运行状态」永远收不到回传**，
+     * 界面只显示「尚未收到报告」，用户会以为模块没挂上。
+     * 排查这类问题时最容易被忽略的恰恰是「异常被静默吞掉」。
+     */
+    private fun registerDiagReceiver() {
+        val filter = IntentFilter(DiagProtocol.ACTION)
+        if (OsCompat.needsReceiverExportFlag) {
+            try {
+                // 发送方是 Telegram 进程（另一个应用），必须 EXPORTED；
+                // 来源可信度由令牌保证，不靠导出标志
+                registerReceiver(diagReceiver, filter, Context.RECEIVER_EXPORTED)
+                return
+            } catch (t: Throwable) {
+                XLog.w("[诊断] 带导出标志的注册失败，退回旧式注册: ${t.message}")
+            }
+        }
         try {
-            registerReceiver(diagReceiver, IntentFilter(DiagProtocol.ACTION), Context.RECEIVER_EXPORTED)
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(diagReceiver, filter)
         } catch (t: Throwable) {
             // 注册失败不影响其余功能
+            XLog.w("[诊断] 接收器注册失败: ${t.message}")
         }
     }
 
@@ -1181,6 +1216,7 @@ class SettingsActivity : Activity() {
                 confirmRisk(title, message) { accepted ->
                     if (accepted) {
                         prefs.edit().putBoolean(key, true).apply()
+                        onPrefChanged(key)
                         // 开关变了，「已开启 N / 共 M」与「只看已开启」的可见性都要跟着刷新
                         applyFilter()
                     } else {
@@ -1189,8 +1225,25 @@ class SettingsActivity : Activity() {
                 }
             } else {
                 prefs.edit().putBoolean(key, checked).apply()
+                onPrefChanged(key)
                 applyFilter()
             }
+        }
+    }
+
+    /**
+     * 某个开关写入后需要立刻做的附带动作。
+     *
+     * 绝大多数开关只要写进配置、等 hook 端下次读取即可，所以这里默认什么都不做。
+     * 只有**模块自身**的状态（而不是 Telegram 里的行为）需要当场生效 ——
+     * 目前只有「隐藏桌面图标」一项。
+     *
+     * 单独抽出来而不是散在 `bindToggle` 里用 if 判断，
+     * 是为了让「哪些开关有额外副作用」这件事有一个明确的落点。
+     */
+    private fun onPrefChanged(key: String) {
+        if (key == Prefs.HIDE_LAUNCHER_ICON) {
+            LauncherIcon.setHidden(this, prefs.getBoolean(key, false))
         }
     }
 
