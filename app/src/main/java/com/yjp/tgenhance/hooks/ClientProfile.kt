@@ -117,7 +117,7 @@ object ClientProfileDetector {
             packageName = packageName,
             versionName = resolveVersionName(packageName),
             kind = resolveKind(packageName),
-            launchActivity = resolveFirst(classLoader, LAUNCH_ACTIVITY_CANDIDATES),
+            launchActivity = resolveLaunchActivity(classLoader, packageName),
             storiesController = resolveFirst(classLoader, STORIES_CANDIDATES)
         )
         cached = profile
@@ -129,7 +129,8 @@ object ClientProfileDetector {
 
     /** 解析出实际存在的主 Activity 类；找不到时返回 null。 */
     fun launchActivityClass(classLoader: ClassLoader): Class<*>? {
-        val name = cached?.launchActivity ?: resolveFirst(classLoader, LAUNCH_ACTIVITY_CANDIDATES)
+        val name = cached?.launchActivity
+            ?: resolveLaunchActivity(classLoader, cached?.packageName.orEmpty())
         return name?.let { findClass(it, classLoader) }
     }
 
@@ -144,6 +145,32 @@ object ClientProfileDetector {
     private fun resolveKind(packageName: String): ClientKind {
         val lower = packageName.lowercase()
         return PACKAGE_RULES.firstOrNull { lower.startsWith(it.first) }?.second ?: ClientKind.UNKNOWN
+    }
+
+    /**
+     * 解析主 Activity：先试已知候选，再问系统「这个包启动时进的是哪个 Activity」。
+     *
+     * 加这个兜底是因为 fork 实在太多 —— 与其往候选列表里不断堆猜出来的类名，
+     * 不如直接从系统的启动信息里读。拿到的名字一定真实存在，
+     * 最多是「拿到的不是主界面而是别的入口」这种无害情况
+     * （那种情况下配置热更新不生效，但不会报错）。
+     */
+    private fun resolveLaunchActivity(classLoader: ClassLoader, packageName: String): String? {
+        resolveFirst(classLoader, LAUNCH_ACTIVITY_CANDIDATES)?.let { return it }
+        if (packageName.isEmpty()) return null
+
+        return try {
+            val app = AndroidAppHelper.currentApplication() ?: return null
+            val intent = android.content.Intent(android.content.Intent.ACTION_MAIN)
+                .addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+                .setPackage(packageName)
+            app.packageManager.queryIntentActivities(intent, 0)
+                ?.firstOrNull()
+                ?.activityInfo
+                ?.name
+        } catch (t: Throwable) {
+            null
+        }
     }
 
     private fun resolveFirst(classLoader: ClassLoader, candidates: List<String>): String? {
