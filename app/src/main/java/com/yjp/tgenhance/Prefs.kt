@@ -35,7 +35,6 @@ object Prefs {
     // ---------------- 网络 ----------------
     const val ENABLE_NET = "enable_net"
     const val BLOCK_PROXY_PROBE = "block_proxy_probe"
-    const val NET_TIMEOUT_SCALE = "net_timeout_scale"
     const val BLOCK_AUTO_DOWNLOAD = "block_auto_download"
     const val DISABLE_AUTOPLAY = "disable_autoplay"
 
@@ -64,10 +63,6 @@ object Prefs {
     const val MAX_ACCOUNTS_LIMIT = 16
     const val MIN_ACCOUNTS_LIMIT = 3
 
-    const val DEF_TIMEOUT_SCALE = 100
-    const val MIN_TIMEOUT_SCALE = 50
-    const val MAX_TIMEOUT_SCALE = 400
-
     private const val RELOAD_THROTTLE_MS = 1_000L
 
     @Volatile
@@ -88,7 +83,7 @@ object Prefs {
      */
     private val ALL_BOOLEAN_KEYS: List<String> get() = Features.ALL.map { it.key }
 
-    private val ALL_INT_KEYS = listOf(MAX_ACCOUNTS, NET_TIMEOUT_SCALE)
+    private val ALL_INT_KEYS = listOf(MAX_ACCOUNTS)
 
     private val ALL_STRING_KEYS = listOf(DIAG_TOKEN)
 
@@ -231,8 +226,6 @@ object Prefs {
     val blockProxyProbe: Boolean get() = hookBoolean(BLOCK_PROXY_PROBE, false)
     val blockAutoDownload: Boolean get() = hookBoolean(BLOCK_AUTO_DOWNLOAD, false)
     val disableAutoplay: Boolean get() = hookBoolean(DISABLE_AUTOPLAY, false)
-    val netTimeoutScale: Int
-        get() = hookInt(NET_TIMEOUT_SCALE, DEF_TIMEOUT_SCALE, MIN_TIMEOUT_SCALE, MAX_TIMEOUT_SCALE)
 
     val antiRecall: Boolean get() = hookBoolean(ANTI_RECALL, false)
     val hideTyping: Boolean get() = hookBoolean(HIDE_TYPING, false)

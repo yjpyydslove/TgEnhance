@@ -34,6 +34,9 @@ import com.yjp.tgenhance.core.FeatureGroup
 import com.yjp.tgenhance.core.Features
 import com.yjp.tgenhance.core.RiskLevel
 import com.yjp.tgenhance.diag.DiagProtocol
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * 设置界面。
@@ -445,6 +448,54 @@ class SettingsActivity : Activity() {
         }
         card.addView(body, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         statusView = body
+
+        // 反馈问题时不用手抄：一键把配置清单 + 运行报告丢进系统分享面板
+        actionRow(card, "分享诊断报告") { shareDiagnostics() }
+        trimTrailingDivider(card)
+    }
+
+    /**
+     * 通过系统分享面板发出诊断报告。
+     *
+     * 用 `ACTION_SEND` 而不是写文件：不需要任何存储权限，
+     * 用户可以随手发到聊天、邮件或笔记里，比让他在文件管理器里找文件靠谱得多。
+     */
+    private fun shareDiagnostics() {
+        val text = buildDiagnosticsText()
+        try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "TgEnhance ${appVersionName()} 诊断报告")
+                putExtra(Intent.EXTRA_TEXT, text)
+            }
+            startActivity(Intent.createChooser(intent, "分享诊断报告"))
+        } catch (t: Throwable) {
+            // 没有可分享的应用时，退回到「复制到剪贴板」
+            if (copyToClipboard(text)) toast("没有可用的分享目标，已复制到剪贴板")
+            else toast("分享失败")
+        }
+    }
+
+    /** 组装可读的诊断文本：配置总览 + Telegram 侧回传的运行报告。 */
+    private fun buildDiagnosticsText(): String {
+        val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+        return buildString {
+            appendLine("TgEnhance ${appVersionName()} 诊断报告")
+            appendLine("导出时间：$stamp")
+            appendLine()
+            appendLine("== 配置 ==")
+            for (spec in Features.ALL) {
+                appendLine("${spec.title}：${prefs.getBoolean(spec.key, spec.default)}")
+            }
+            appendLine("最大账号数：${prefs.getInt(Prefs.MAX_ACCOUNTS, Prefs.DEF_MAX_ACCOUNTS)}")
+            appendLine()
+            appendLine("== Telegram 侧运行报告 ==")
+            appendLine(prefs.getString(Prefs.DIAG_SNAPSHOT, null) ?: "（尚未收到回传，请先打开一次 Telegram）")
+            appendLine()
+            appendLine("== 说明 ==")
+            appendLine("「未触发」只代表这段时间没出现过对应动作，不等于功能失效。")
+            appendLine("完整挂载日志请到 LSPosed 管理器 → 日志，搜索 TgEnhance。")
+        }
     }
 
     /**
