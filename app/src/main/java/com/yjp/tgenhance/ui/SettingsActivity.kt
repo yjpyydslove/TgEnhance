@@ -388,8 +388,8 @@ class SettingsActivity : Activity() {
     /**
      * 渲染 hook 端回传的快照。
      *
-     * 快照是 `key=value` 逐行文本（见 `HookStats.snapshot`），刻意不用 JSON，
-     * 免得两个进程之间还要处理序列化差异。
+     * 载荷是朴素文本，被 [DiagProtocol.SECTION_SELFCHECK] 切成两段：
+     * 前半是 hook 触发计数，后半是挂载期自检清单。
      */
     private fun renderSnapshot(payload: String?): CharSequence {
         if (payload.isNullOrBlank()) {
@@ -400,9 +400,20 @@ class SettingsActivity : Activity() {
                 "「作用域」是否勾选了 Telegram。"
         }
 
+        val sections = payload.split(DiagProtocol.SECTION_SELFCHECK)
+        return buildString {
+            append(renderHookSection(sections.getOrNull(0).orEmpty()))
+            append("\n\n")
+            append(renderSelfCheckSection(sections.getOrNull(1).orEmpty()))
+        }
+    }
+
+    private fun renderHookSection(section: String): String {
         val timePrefix = DiagProtocol.KEY_TIME + "="
-        val lines = payload.trim().split("\n")
-        val reportTime = lines.firstOrNull { it.startsWith(timePrefix) }?.substringAfter('=') ?: "--:--:--"
+        val lines = section.trim().lines()
+        val reportTime = lines.firstOrNull { it.startsWith(timePrefix) }
+            ?.substringAfter('=')
+            ?: "--:--:--"
 
         val items = lines
             .filter { it.contains('=') && !it.startsWith(timePrefix) }
@@ -434,6 +445,34 @@ class SettingsActivity : Activity() {
         sb.append("\n\n「未触发」只代表这段时间没出现过对应动作（例如没人撤回消息），")
         sb.append("不等于功能失效；完全没触发过的项才需要怀疑 Hook 点随版本变动。")
         return sb.toString()
+    }
+
+    /** 渲染挂载期自检：命中多少、哪些没匹配上。 */
+    private fun renderSelfCheckSection(section: String): String {
+        val lines = section.trim().lines().filter { it.isNotBlank() }
+
+        lines.firstOrNull { it.startsWith("#") }?.let {
+            return "Hook 点自检：" + it.removePrefix("#").trim()
+        }
+        if (lines.isEmpty()) {
+            return "Hook 点自检：本次会话未采集到结果"
+        }
+
+        val hit = lines.count { it.startsWith(DiagProtocol.MARK_OK) }
+        val missing = lines.filter { it.startsWith(DiagProtocol.MARK_MISS) }
+
+        val sb = StringBuilder()
+        sb.append("Hook 点自检：命中 ").append(hit).append('/').append(lines.size)
+        if (missing.isEmpty()) {
+            sb.append("\n\n全部命中 —— 目标类与方法均匹配当前 Telegram 版本。")
+            return sb.toString()
+        }
+
+        sb.append("\n\n未匹配的项（对应功能大概率无效，需要针对该版本重新定位）：\n")
+        for (line in missing) {
+            sb.append("  · ").append(line.removePrefix(DiagProtocol.MARK_MISS)).append('\n')
+        }
+        return sb.toString().trimEnd()
     }
 
     private fun buildFooter() {

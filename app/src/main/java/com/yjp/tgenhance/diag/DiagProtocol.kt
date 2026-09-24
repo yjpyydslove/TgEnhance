@@ -21,4 +21,18 @@ object DiagProtocol {
 
     /** 快照里时间行的 key。 */
     const val KEY_TIME = "time"
+
+    /**
+     * 自检清单段的分隔行。
+     *
+     * 整份载荷是一段朴素文本，用这一行把它切成两半：
+     * 前半是 hook 触发计数，后半是挂载期自检结果。
+     */
+    const val SECTION_SELFCHECK = "--selfcheck--"
+
+    /** 自检命中标记。 */
+    const val MARK_OK = "OK "
+
+    /** 自检未命中标记。 */
+    const val MARK_MISS = "MISS "
 }

@@ -47,11 +47,33 @@ object DiagBridge {
             val intent = Intent(DiagProtocol.ACTION).apply {
                 setPackage(Prefs.MODULE_PKG)
                 putExtra(DiagProtocol.EXTRA_TOKEN, token)
-                putExtra(DiagProtocol.EXTRA_PAYLOAD, HookStats.snapshot(timeFormat.format(Date())))
+                putExtra(DiagProtocol.EXTRA_PAYLOAD, buildPayload())
             }
             app.sendBroadcast(intent)
         } catch (t: Throwable) {
             XLog.e("[诊断] 回传失败", t)
+        }
+    }
+
+    /**
+     * 组装载荷：hook 触发计数 + 挂载期自检清单。
+     *
+     * 自检结果只在启动时算一次并缓存在 [Diagnostics] 里，之后每次广播都带上，
+     * 所以设置界面不需要向 hook 端「发起请求」，也就不必在 Telegram 进程里
+     * 再注册一个接收器。
+     */
+    private fun buildPayload(): String = buildString {
+        append(HookStats.snapshot(timeFormat.format(Date())))
+
+        append(DiagProtocol.SECTION_SELFCHECK).append('\n')
+        val report = Diagnostics.report()
+        if (report.isEmpty()) {
+            append("# 未执行自检（诊断日志开关处于关闭状态）").append('\n')
+        } else {
+            for (item in report) {
+                append(if (item.ok) DiagProtocol.MARK_OK else DiagProtocol.MARK_MISS)
+                append(item.owner).append('#').append(item.member).append('\n')
+            }
         }
     }
 }
