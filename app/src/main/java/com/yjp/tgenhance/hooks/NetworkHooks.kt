@@ -50,16 +50,32 @@ object NetworkHooks {
             return
         }
 
+        val targets = HookFinder.match(
+            cls,
+            explicitNames = listOf("checkProxy"),
+            nameContains = "checkproxy"
+        )
+        if (targets.isEmpty()) {
+            XLog.w("[网络] 未定位到 checkProxy，代理探测防护不可用")
+            HookStatus.markUnavailable(Prefs.BLOCK_PROXY_PROBE)
+            return
+        }
+
         safe("代理探测防护") {
-            HookInstaller.hookAllByName(cls, "checkProxy", object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    HookStats.hit("net.proxyProbe")
-                    if (!Prefs.netEnabled || !Prefs.blockProxyProbe) return
-                    param.result = 0L
-                    XLog.result("网络", "已阻止一次代理探测（真实 IP 不外泄）")
-                }
-            })
-            XLog.result("网络", "checkProxy() 已接管：开启后不再发起绕开代理的连通性探测")
+            for (method in targets) {
+                HookInstaller.hookMethodQuietly(method, object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        HookStats.hit("net.proxyProbe")
+                        if (!Prefs.netEnabled || !Prefs.blockProxyProbe) return
+                        param.result = 0L
+                        XLog.result("网络", "已阻止一次代理探测（真实 IP 不外泄）")
+                    }
+                })
+            }
+            XLog.result(
+                "网络",
+                "checkProxy() 已接管 ${targets.size} 个重载：开启后不再发起绕开代理的连通性探测"
+            )
         }
     }
 

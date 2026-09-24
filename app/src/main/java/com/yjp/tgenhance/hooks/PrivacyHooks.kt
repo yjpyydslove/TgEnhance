@@ -87,20 +87,40 @@ object PrivacyHooks {
             return
         }
 
+        // 精确名 + 特征兜底：官方把 sendTyping 改成别的名字时仍能命中
+        val targets = HookFinder.match(
+            cls,
+            explicitNames = listOf("sendTyping"),
+            returnType = Boolean::class.javaPrimitiveType,
+            nameContains = "typing"
+        )
+        if (targets.isEmpty()) {
+            XLog.w("[隐私] 未定位到 sendTyping，隐藏输入状态不可用")
+            HookStatus.markUnavailable(Prefs.HIDE_TYPING)
+            return
+        }
+
         safe("隐藏输入状态") {
-            HookInstaller.hookAllByName(cls, "sendTyping", object : XC_MethodReplacement() {
-                override fun replaceHookedMethod(param: MethodHookParam): Any? {
-                    if (!Prefs.privacyEnabled || !Prefs.hideTyping) return invokeOriginal(param) ?: false
-                    return try {
-                        HookStats.hit("privacy.typing")
-                        false
-                    } catch (t: Throwable) {
-                        XLog.e("[隐藏输入状态] 回调异常，本次放行", t)
-                        invokeOriginal(param) ?: false
+            for (method in targets) {
+                HookInstaller.hookMethodQuietly(method, object : XC_MethodReplacement() {
+                    override fun replaceHookedMethod(param: MethodHookParam): Any? {
+                        if (!Prefs.privacyEnabled || !Prefs.hideTyping) {
+                            return invokeOriginal(param) ?: false
+                        }
+                        return try {
+                            HookStats.hit("privacy.typing")
+                            false
+                        } catch (t: Throwable) {
+                            XLog.e("[隐藏输入状态] 回调异常，本次放行", t)
+                            invokeOriginal(param) ?: false
+                        }
                     }
-                }
-            })
-            XLog.result("隐私", "sendTyping() 已接管：开启后不再发送输入/录音状态")
+                })
+            }
+            XLog.result(
+                "隐私",
+                "sendTyping() 已接管 ${targets.size} 个重载：开启后不再发送输入/录音状态"
+            )
         }
     }
 
@@ -115,22 +135,40 @@ object PrivacyHooks {
             return
         }
 
+        // 精确名 + 特征兜底。注意不能按返回类型约束 —— 其多个重载返回值不同，
+        // 这里只要求名字里含 deleteMessage，再在回调里自行判据
+        val targets = HookFinder.match(
+            cls,
+            explicitNames = listOf("deleteMessages"),
+            nameContains = "deletemessage"
+        )
+        if (targets.isEmpty()) {
+            XLog.w("[隐私] 未定位到 deleteMessages，防撤回不可用")
+            HookStatus.markUnavailable(Prefs.ANTI_RECALL)
+            return
+        }
+
         safe("防撤回") {
-            HookInstaller.hookAllByName(cls, "deleteMessages", object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    guard("防撤回") {
-                        // 只要 deleteMessages 被调用就计数，用于判断 hook 是否还挂在活跃路径上
-                        HookStats.hit("privacy.deleteMessages")
-                        if (!Prefs.privacyEnabled || !Prefs.antiRecall) return@guard
-                        if (!isServerSideRecall(param)) return@guard
-                        // 短路，不执行原删除逻辑
-                        param.result = null
-                        HookStats.hit("privacy.recall.blocked")
-                        XLog.result("防撤回", "拦截一次服务器撤回 (参数个数=${param.args.size})")
+            for (method in targets) {
+                HookInstaller.hookMethodQuietly(method, object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        guard("防撤回") {
+                            // 只要 deleteMessages 被调用就计数，用于判断 hook 是否还挂在活跃路径上
+                            HookStats.hit("privacy.deleteMessages")
+                            if (!Prefs.privacyEnabled || !Prefs.antiRecall) return@guard
+                            if (!isServerSideRecall(param)) return@guard
+                            // 短路，不执行原删除逻辑
+                            param.result = null
+                            HookStats.hit("privacy.recall.blocked")
+                            XLog.result("防撤回", "拦截一次服务器撤回 (参数个数=${param.args.size})")
+                        }
                     }
-                }
-            })
-            XLog.result("隐私", "deleteMessages() 已接管：仅拦截服务器撤回，不影响自己删消息")
+                })
+            }
+            XLog.result(
+                "隐私",
+                "deleteMessages() 已接管 ${targets.size} 个重载：仅拦截服务器撤回，不影响自己删消息"
+            )
         }
     }
 

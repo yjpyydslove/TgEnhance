@@ -117,16 +117,33 @@ object AccountHooks {
             XLog.e("[多账号] 未找到 $CLS_USER_CONFIG，作用域是否勾选了 Telegram？")
             return
         }
+        val targets = HookFinder.match(
+            cls,
+            explicitNames = listOf("getMaxAccountCount"),
+            returnType = Int::class.javaPrimitiveType,
+            nameContains = "maxaccount"
+        )
+        if (targets.isEmpty()) {
+            XLog.e("[多账号] 未定位到 getMaxAccountCount，多账号上限提升不可用")
+            HookStatus.markUnavailable(Prefs.ENABLE_ACCOUNT)
+            return
+        }
+
         safe("getMaxAccountCount") {
-            HookInstaller.hookAllByName(cls, "getMaxAccountCount", object : XC_MethodHook() {
-                override fun afterHookedMethod(param: MethodHookParam) {
-                    if (param.args.isNotEmpty()) return
-                    HookStats.hit("account.maxCount")
-                    if (!Prefs.accountEnabled) return
-                    param.result = Prefs.maxAccounts
-                }
-            })
-            XLog.result("多账号", "UserConfig.getMaxAccountCount() 已接管（开启后返回设定值）")
+            for (method in targets) {
+                HookInstaller.hookMethodQuietly(method, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        if (param.args.isNotEmpty()) return
+                        HookStats.hit("account.maxCount")
+                        if (!Prefs.accountEnabled) return
+                        param.result = Prefs.maxAccounts
+                    }
+                })
+            }
+            XLog.result(
+                "多账号",
+                "UserConfig.getMaxAccountCount() 已接管 ${targets.size} 处（开启后返回设定值）"
+            )
         }
     }
 
@@ -149,7 +166,7 @@ object AccountHooks {
         val method = findIntGetInstance(cls) ?: return CapResult.NO_METHOD
 
         return try {
-            XposedBridge.hookMethod(method, object : XC_MethodHook() {
+            HookInstaller.hookMethodQuietly(method, object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     guard("账号扩容") {
                         if (!Prefs.accountEnabled) return@guard
@@ -239,50 +256,67 @@ object AccountHooks {
         val accountInstance = XposedHelpers.findClassIfExists(CLS_ACCOUNT_INSTANCE, classLoader) ?: return
 
         // getActivatedAccountsCount(): for (a = 0; a < MAX_ACCOUNT_COUNT; a++) —— 上界被内联为常量
+        val countTargets = HookFinder.match(
+            userConfig,
+            explicitNames = listOf("getActivatedAccountsCount"),
+            returnType = Int::class.javaPrimitiveType,
+            nameContains = "activatedaccount"
+        )
         safe("getActivatedAccountsCount") {
-            HookInstaller.hookAllByName(userConfig, "getActivatedAccountsCount", object : XC_MethodReplacement() {
-                override fun replaceHookedMethod(param: MethodHookParam): Any? = try {
-                    if (!Prefs.accountEnabled) invokeOriginal(param) ?: 0
-                    else countActivated(accountInstance)
-                } catch (t: Throwable) {
-                    XLog.e("[多账号] getActivatedAccountsCount 回调异常", t)
-                    0
-                }
-            })
-            XLog.result("多账号", "getActivatedAccountsCount() 已接管（遍历范围跟随设定值）")
+            for (method in countTargets) {
+                HookInstaller.hookMethodQuietly(method, object : XC_MethodReplacement() {
+                    override fun replaceHookedMethod(param: MethodHookParam): Any? = try {
+                        if (!Prefs.accountEnabled) invokeOriginal(param) ?: 0
+                        else countActivated(accountInstance)
+                    } catch (t: Throwable) {
+                        XLog.e("[多账号] getActivatedAccountsCount 回调异常", t)
+                        0
+                    }
+                })
+            }
+            XLog.result("多账号", "getActivatedAccountsCount() 已接管 ${countTargets.size} 处")
         }
 
         // hasPremiumOnAccounts(): 同样被常量写死，会导致高级账号状态判断不全
+        val premiumTargets = HookFinder.match(
+            userConfig,
+            explicitNames = listOf("hasPremiumOnAccounts"),
+            returnType = Boolean::class.javaPrimitiveType,
+            nameContains = "premium"
+        )
         safe("hasPremiumOnAccounts") {
-            HookInstaller.hookAllByName(userConfig, "hasPremiumOnAccounts", object : XC_MethodReplacement() {
-                override fun replaceHookedMethod(param: MethodHookParam): Any? = try {
-                    if (!Prefs.accountEnabled) {
-                        invokeOriginal(param) ?: false
-                    } else {
-                        var found = false
-                        for (a in 0 until Prefs.maxAccounts) {
-                            try {
-                                val instance = XposedHelpers.callStaticMethod(accountInstance, "getInstance", a) ?: continue
-                                val uc = XposedHelpers.callMethod(instance, "getUserConfig") ?: continue
-                                val activated = XposedHelpers.callMethod(uc, "isClientActivated") as? Boolean ?: false
-                                val premium = XposedHelpers.callMethod(uc, "isPremium") as? Boolean ?: false
-                                if (activated && premium) {
-                                    found = true
-                                    break
-                                }
-                            } catch (t: Throwable) {
-                                // 单个账号查询失败不影响整体结果
-                            }
+            for (method in premiumTargets) {
+                HookInstaller.hookMethodQuietly(method, object : XC_MethodReplacement() {
+                    override fun replaceHookedMethod(param: MethodHookParam): Any? = try {
+                        if (!Prefs.accountEnabled) {
+                            invokeOriginal(param) ?: false
+                        } else {
+                            hasPremiumOnAnyAccount(accountInstance)
                         }
-                        found
+                    } catch (t: Throwable) {
+                        XLog.e("[多账号] hasPremiumOnAccounts 回调异常", t)
+                        false
                     }
-                } catch (t: Throwable) {
-                    XLog.e("[多账号] hasPremiumOnAccounts 回调异常", t)
-                    false
-                }
-            })
-            XLog.result("多账号", "hasPremiumOnAccounts() 已接管（遍历范围跟随设定值）")
+                })
+            }
+            XLog.result("多账号", "hasPremiumOnAccounts() 已接管 ${premiumTargets.size} 处")
         }
+    }
+
+    /** 遍历所有已配置的账号，是否存在「已登录且是会员」的。 */
+    private fun hasPremiumOnAnyAccount(accountInstance: Class<*>): Boolean {
+        for (a in 0 until Prefs.maxAccounts) {
+            try {
+                val instance = XposedHelpers.callStaticMethod(accountInstance, "getInstance", a) ?: continue
+                val uc = XposedHelpers.callMethod(instance, "getUserConfig") ?: continue
+                val activated = XposedHelpers.callMethod(uc, "isClientActivated") as? Boolean ?: false
+                val premium = XposedHelpers.callMethod(uc, "isPremium") as? Boolean ?: false
+                if (activated && premium) return true
+            } catch (t: Throwable) {
+                // 单个账号查询失败不影响整体结果
+            }
+        }
+        return false
     }
 
     private fun countActivated(accountInstanceClass: Class<*>): Int {
