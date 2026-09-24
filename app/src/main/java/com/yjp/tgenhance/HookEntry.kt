@@ -111,6 +111,17 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
 
         val total = SystemClock.elapsedRealtime() - startedAt
         XLog.result("性能", "挂载总耗时 ${total}ms（其中自检 ${diagCost}ms）")
+
+        // 这段代码在 handleLoadPackage 里同步跑，耗时直接算进 Telegram 的启动时间。
+        // 超阈值时明确提示「可以关掉诊断日志来省掉这部分」—— 用户自己不会想到
+        // 自检是可选的。
+        if (total > SLOW_MOUNT_WARN_MS) {
+            XLog.w(
+                "[性能] 挂载耗时偏长（${total}ms）。若感觉 Telegram 启动变慢，" +
+                    "可在设置里关闭「输出诊断日志」—— 自检占了 ${diagCost}ms，" +
+                    "它只服务于排查问题，日常使用不需要。"
+            )
+        }
         XLog.i("全部模块挂载流程结束")
     }
 
@@ -237,5 +248,8 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
          * 广播接收器，立即发出的那条会被丢掉；延迟一点补发，首屏就能看到数据。
          */
         const val DIAG_REBROADCAST_DELAY_MS = 2_000L
+
+        /** 挂载总耗时超过这个值就提示一次（ms）。 */
+        const val SLOW_MOUNT_WARN_MS = 400L
     }
 }

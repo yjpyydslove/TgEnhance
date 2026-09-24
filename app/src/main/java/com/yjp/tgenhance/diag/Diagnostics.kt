@@ -399,9 +399,16 @@ object Diagnostics {
             }
         }
 
-        XLog.result("诊断", "$simpleName: ${logParts.joinToString(" | ")}")
+        // 单个类的重载可能很多（MessagesController 上就有几十个），
+        // 全打出来会把日志页刷满，这里截断并标注省略了多少条
+        val shown = logParts.take(MAX_PARTS_PER_CLASS)
+        val suffix = if (logParts.size > shown.size) " …（另有 ${logParts.size - shown.size} 条未打印）" else ""
+        XLog.result("诊断", "$simpleName: ${shown.joinToString(" | ")}$suffix")
         return out
     }
 
     private const val MISSING_CLASS = "类缺失"
+
+    /** 单个类最多输出多少条方法签名，超出部分只记数量。 */
+    private const val MAX_PARTS_PER_CLASS = 8
 }
