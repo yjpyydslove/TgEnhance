@@ -69,6 +69,9 @@ object Prefs {
     private var lastReload = 0L
 
     @Volatile
+    private var zygoteInitialized = false
+
+    @Volatile
     private var hookPrefs: XSharedPreferences? = null
 
     @Volatile
@@ -131,8 +134,29 @@ object Prefs {
             XLog.e("XSharedPreferences 初始化失败: ${t.message}")
             null
         }
+
+        if (hookPrefs == null) {
+            // 这一步很容易被忽略：配置读不到时所有开关都会走默认值（恒为关闭），
+            // 表现为「模块完全没反应」，用户却以为是自己没配对。
+            // 常见于 LSPatch 等非标准实现 —— 它们不提供跨进程配置映射。
+            XLog.e(
+                "[配置] 跨进程配置不可读 —— 本框架可能不支持 XSharedPreferences" +
+                    "（LSPatch 等免 root 方案常见）。所有开关将按默认值（关闭）处理。"
+            )
+        }
         refreshSnapshot()
     }
+
+    /** 标记 Zygote 初始化回调被调用过。LSPatch 等方案不会调用它。 */
+    fun markZygoteInit() {
+        zygoteInitialized = true
+    }
+
+    /** 跨进程配置是否可读。 */
+    val isPrefsAvailable: Boolean get() = hookPrefs != null
+
+    /** Zygote 初始化回调是否被框架调用过。 */
+    val isZygoteInitialized: Boolean get() = zygoteInitialized
 
     /** 设置界面初始化（模块 App 进程内读写）。 */
     fun initForApp(context: Context) {

@@ -32,6 +32,9 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
 class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
 
     override fun initZygote(startupParam: IXposedHookZygoteInit.StartupParam) {
+        // 记录一下：部分免 root 方案（LSPatch 等）根本不走 Zygote 注入，
+        // 这个回调永远不会被调用。它不是必须的，但要能在自检里看出来。
+        Prefs.markZygoteInit()
         XLog.i("initZygote 完成, modulePath=${startupParam.modulePath}")
     }
 

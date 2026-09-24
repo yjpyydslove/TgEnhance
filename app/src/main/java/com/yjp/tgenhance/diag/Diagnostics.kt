@@ -109,6 +109,7 @@ object Diagnostics {
         }
         configConsistency()?.let { items += it }
         conflictCheck()?.let { items += it }
+        items += frameworkCheck()
         lastReport = items
 
         val okCount = items.count { it.ok }
@@ -175,6 +176,33 @@ object Diagnostics {
             member = "被其他模块占用的 Hook 点（${list.size} 个）",
             ok = false,
             suggestions = list.take(8)
+        )
+    }
+
+    /**
+     * 框架兼容性检查。
+     *
+     * 这两条信息基本能解释「为什么开关点了没反应」：
+     *
+     * - **跨进程配置能不能读到**：读不到时所有开关都走默认值（全关），
+     *   表现就是模块完全没反应。LSPatch 等免 root 方案常见。
+     * - **Zygote 注入回调有没有被调用**：不是必须的（本模块不依赖它），
+     *   但能帮助判断当前跑在哪种注入方式下。
+     */
+    private fun frameworkCheck(): CheckItem {
+        val prefsOk = Prefs.isPrefsAvailable
+        val zygoteOk = Prefs.isZygoteInitialized
+
+        return CheckItem(
+            owner = "框架",
+            member = "配置读取 " + (if (prefsOk) "正常" else "不可用") +
+                "；Zygote 注入 " + (if (zygoteOk) "已调用" else "未调用"),
+            ok = prefsOk,
+            suggestions = if (prefsOk) {
+                emptyList()
+            } else {
+                listOf("配置不可读时所有功能都会保持关闭 —— LSPatch 等免 root 方案常见")
+            }
         )
     }
 
