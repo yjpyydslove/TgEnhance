@@ -523,6 +523,10 @@ class SettingsActivity : Activity() {
 
         actionRow(card, "导出配置到剪贴板") { exportToClipboard() }
         actionRow(card, "从剪贴板导入配置") { importFromClipboard() }
+        // 与「关闭全部功能」的区别：只关有副作用的那些（防撤回、隐藏输入、
+        // 不上报已读、隐藏在线、广告屏蔽…），零风险的显示类调整照常保留
+        actionRow(card, "只关闭有风险的功能", danger = true) { disableRiskyFeatures() }
+
         actionRow(card, "关闭全部功能", danger = true) { confirmDisableAll() }
 
         trimTrailingDivider(card)
@@ -788,6 +792,34 @@ class SettingsActivity : Activity() {
         editor.apply()
         toast("已应用：$name")
         recreate()
+    }
+
+    /**
+     * 只关闭带副作用的功能。
+     *
+     * 试用过一阵之后想「收敛回安全默认」，但又不想把所有显示类的调整也一并丢掉 ——
+     * 这个入口就是给这种场景的。清单来自 Features.riskyTitles，不另维护一份。
+     */
+    private fun disableRiskyFeatures() {
+        val keys = Features.riskyTitles.keys
+        if (keys.isEmpty()) {
+            toast("没有需要关闭的功能")
+            return
+        }
+
+        val names = Features.riskyTitles.values.joinToString("、")
+        AlertDialog.Builder(this)
+            .setTitle("关闭有风险的功能")
+            .setMessage("将关闭以下 ${keys.size} 项：\n\n$names\n\n零风险的显示类调整会保留。")
+            .setPositiveButton("关闭它们") { _, _ ->
+                val editor = prefs.edit()
+                for (key in keys) editor.putBoolean(key, false)
+                editor.apply()
+                toast("已关闭 ${keys.size} 项有风险的功能")
+                recreate()
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     private fun confirmDisableAll() {
