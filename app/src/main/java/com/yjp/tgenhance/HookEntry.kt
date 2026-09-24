@@ -157,19 +157,22 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
     /**
      * 判定是否 Telegram 系客户端。
      *
-     * 先用包名粗筛降低开销，再用「UserConfig 类是否存在」做精确认定 ——
-     * 这样未知的第三方 fork 也能自动适配，不必维护包名白名单。
+     * v2.5.0 起**只靠类存在性判断，不再依赖包名**。
+     *
+     * 原因：第三方 fork 常常改包名（`com.example.tgclient` 之类），
+     * 早先那套「包名里得有 telegram/gram」的粗筛会把它们全部漏掉 ——
+     * 而漏掉的后果是用户看到「模块没反应」，却完全不知道是被自己的包名筛掉的。
+     *
+     * 开销可以忽略：LSPosed 只为「作用域内」的应用调用本方法，
+     * 而且 `findClassIfExists` 就是一次类加载尝试。
      */
     private fun isTelegramClient(lpparam: XC_LoadPackage.LoadPackageParam): Boolean {
-        val pkg = lpparam.packageName.lowercase()
-        val looksLikeTelegram = pkg.contains("telegram") ||
-            pkg.contains("gram") ||
-            pkg.contains("nekogram") ||
-            pkg.contains("extera")
-        if (!looksLikeTelegram) return false
-
+        if (lpparam.packageName == Prefs.MODULE_PKG) return false
         return try {
-            XposedHelpers.findClassIfExists("org.telegram.messenger.UserConfig", lpparam.classLoader) != null
+            XposedHelpers.findClassIfExists(
+                "org.telegram.messenger.UserConfig",
+                lpparam.classLoader
+            ) != null
         } catch (t: Throwable) {
             false
         }

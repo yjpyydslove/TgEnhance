@@ -2,6 +2,7 @@ package com.yjp.tgenhance.hooks
 
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.XLog
+import com.yjp.tgenhance.XLog.guard
 import com.yjp.tgenhance.XLog.safe
 import com.yjp.tgenhance.diag.HookStats
 import de.robv.android.xposed.XC_MethodHook
@@ -150,10 +151,12 @@ object AccountHooks {
         return try {
             XposedBridge.hookMethod(method, object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    if (!Prefs.accountEnabled) return
-                    val index = param.args.getOrNull(0) as? Int ?: return
-                    if (index < 0) return
-                    ensureCapacity(cls, field, index)
+                    guard("账号扩容") {
+                        if (!Prefs.accountEnabled) return@guard
+                        val index = param.args.getOrNull(0) as? Int ?: return@guard
+                        if (index < 0) return@guard
+                        ensureCapacity(cls, field, index)
+                    }
                 }
             })
             CapResult.OK
@@ -238,9 +241,12 @@ object AccountHooks {
         // getActivatedAccountsCount(): for (a = 0; a < MAX_ACCOUNT_COUNT; a++) —— 上界被内联为常量
         safe("getActivatedAccountsCount") {
             XposedBridge.hookAllMethods(userConfig, "getActivatedAccountsCount", object : XC_MethodReplacement() {
-                override fun replaceHookedMethod(param: MethodHookParam): Any {
-                    if (!Prefs.accountEnabled) return invokeOriginal(param) ?: 0
-                    return countActivated(accountInstance)
+                override fun replaceHookedMethod(param: MethodHookParam): Any? = try {
+                    if (!Prefs.accountEnabled) invokeOriginal(param) ?: 0
+                    else countActivated(accountInstance)
+                } catch (t: Throwable) {
+                    XLog.e("[多账号] getActivatedAccountsCount 回调异常", t)
+                    0
                 }
             })
             XLog.result("多账号", "getActivatedAccountsCount() 已接管（遍历范围跟随设定值）")
@@ -249,20 +255,30 @@ object AccountHooks {
         // hasPremiumOnAccounts(): 同样被常量写死，会导致高级账号状态判断不全
         safe("hasPremiumOnAccounts") {
             XposedBridge.hookAllMethods(userConfig, "hasPremiumOnAccounts", object : XC_MethodReplacement() {
-                override fun replaceHookedMethod(param: MethodHookParam): Any {
-                    if (!Prefs.accountEnabled) return invokeOriginal(param) ?: false
-                    for (a in 0 until Prefs.maxAccounts) {
-                        try {
-                            val instance = XposedHelpers.callStaticMethod(accountInstance, "getInstance", a) ?: continue
-                            val uc = XposedHelpers.callMethod(instance, "getUserConfig") ?: continue
-                            val activated = XposedHelpers.callMethod(uc, "isClientActivated") as? Boolean ?: false
-                            val premium = XposedHelpers.callMethod(uc, "isPremium") as? Boolean ?: false
-                            if (activated && premium) return true
-                        } catch (t: Throwable) {
-                            // 单个账号查询失败不影响整体结果
+                override fun replaceHookedMethod(param: MethodHookParam): Any? = try {
+                    if (!Prefs.accountEnabled) {
+                        invokeOriginal(param) ?: false
+                    } else {
+                        var found = false
+                        for (a in 0 until Prefs.maxAccounts) {
+                            try {
+                                val instance = XposedHelpers.callStaticMethod(accountInstance, "getInstance", a) ?: continue
+                                val uc = XposedHelpers.callMethod(instance, "getUserConfig") ?: continue
+                                val activated = XposedHelpers.callMethod(uc, "isClientActivated") as? Boolean ?: false
+                                val premium = XposedHelpers.callMethod(uc, "isPremium") as? Boolean ?: false
+                                if (activated && premium) {
+                                    found = true
+                                    break
+                                }
+                            } catch (t: Throwable) {
+                                // 单个账号查询失败不影响整体结果
+                            }
                         }
+                        found
                     }
-                    return false
+                } catch (t: Throwable) {
+                    XLog.e("[多账号] hasPremiumOnAccounts 回调异常", t)
+                    false
                 }
             })
             XLog.result("多账号", "hasPremiumOnAccounts() 已接管（遍历范围跟随设定值）")

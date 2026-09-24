@@ -74,6 +74,57 @@ object Prefs {
     @Volatile
     private var appPrefs: SharedPreferences? = null
 
+    /**
+     * 全部布尔配置项。
+     *
+     * 同时服务于三处：内存快照 [refreshSnapshot]、导入导出、以及「关闭全部功能」。
+     * 新增开关时**务必加进来** —— 漏了会导致该项在快照里查不到，只能回退直读文件。
+     */
+    private val ALL_BOOLEAN_KEYS = listOf(
+        ENABLE_ACCOUNT, ENABLE_UI, SYSTEM_FONT, HIDE_STORIES,
+        ENABLE_NET, BLOCK_PROXY_PROBE, BLOCK_AUTO_DOWNLOAD,
+        ENABLE_PRIVACY, ANTI_RECALL, HIDE_TYPING, BLOCK_READ_RECEIPT, HIDE_ONLINE,
+        ENABLE_DIAG,
+    )
+
+    private val ALL_INT_KEYS = listOf(MAX_ACCOUNTS, NET_TIMEOUT_SCALE)
+
+    private val ALL_STRING_KEYS = listOf(DIAG_TOKEN)
+
+    /**
+     * 内存快照。
+     *
+     * Hook 回调可能每帧都在跑（`getTypeface` 尤其频繁），每次去读
+     * `XSharedPreferences` 都要走一遍文件快照查找，没必要。
+     * 这里把配置一次性读进 map，读取退化成一次哈希查找。
+     *
+     * 刷新时机：[initForHook] 与 [reload]，也就是「进程启动」和「用户切回 Telegram」，
+     * 与热更新机制天然同步。
+     */
+    @Volatile
+    private var snapshot: Map<String, Any>? = null
+
+    private fun refreshSnapshot() {
+        val p = hookPrefs ?: return
+        try {
+            val map = HashMap<String, Any>(32)
+            for (key in ALL_BOOLEAN_KEYS) {
+                // 只放「显式设置过」的项，未设置的交给调用方传的默认值决定
+                if (p.contains(key)) map[key] = p.getBoolean(key, false)
+            }
+            for (key in ALL_INT_KEYS) {
+                if (p.contains(key)) map[key] = p.getInt(key, DEF_MAX_ACCOUNTS)
+            }
+            for (key in ALL_STRING_KEYS) {
+                p.getString(key, null)?.let { map[key] = it }
+            }
+            snapshot = map
+        } catch (t: Throwable) {
+            XLog.e("配置快照构建失败，回退为直接读取: ${t.message}")
+            snapshot = null
+        }
+    }
+
     /** Telegram 进程内初始化（hook 端只读）。 */
     fun initForHook() {
         hookPrefs = try {
@@ -84,6 +135,7 @@ object Prefs {
             XLog.e("XSharedPreferences 初始化失败: ${t.message}")
             null
         }
+        refreshSnapshot()
     }
 
     /** 设置界面初始化（模块 App 进程内读写）。 */
@@ -109,33 +161,42 @@ object Prefs {
         lastReload = now
         try {
             hookPrefs?.reload()
+            refreshSnapshot()
         } catch (t: Throwable) {
             XLog.e("配置重载失败: ${t.message}")
         }
     }
 
     // ---------------- hook 端读取 ----------------
+    //
+    // 优先走内存快照（一次哈希查找），未命中再回退直读文件。
+    // 快照在 initForHook / reload 时刷新，因此不会读到过期值。
 
     fun hookBoolean(key: String, def: Boolean): Boolean =
-        try {
-            hookPrefs?.getBoolean(key, def) ?: def
-        } catch (t: Throwable) {
-            def
-        }
+        (snapshot?.get(key) as? Boolean)
+            ?: try {
+                hookPrefs?.getBoolean(key, def) ?: def
+            } catch (t: Throwable) {
+                def
+            }
 
-    fun hookInt(key: String, def: Int, min: Int = Int.MIN_VALUE, max: Int = Int.MAX_VALUE): Int =
-        try {
-            (hookPrefs?.getInt(key, def) ?: def).coerceIn(min, max)
-        } catch (t: Throwable) {
-            def
-        }
+    fun hookInt(key: String, def: Int, min: Int = Int.MIN_VALUE, max: Int = Int.MAX_VALUE): Int {
+        val raw = (snapshot?.get(key) as? Int)
+            ?: try {
+                hookPrefs?.getInt(key, def) ?: def
+            } catch (t: Throwable) {
+                def
+            }
+        return raw.coerceIn(min, max)
+    }
 
     fun hookString(key: String, def: String): String =
-        try {
-            hookPrefs?.getString(key, def) ?: def
-        } catch (t: Throwable) {
-            def
-        }
+        (snapshot?.get(key) as? String)
+            ?: try {
+                hookPrefs?.getString(key, def) ?: def
+            } catch (t: Throwable) {
+                def
+            }
 
     /**
      * 模块进程：确保回传令牌已生成。
@@ -190,15 +251,10 @@ object Prefs {
     private const val CONFIG_PREFIX = "TGE1:"
 
     /** 参与导入导出的布尔项。 */
-    private val BOOLEAN_KEYS = listOf(
-        ENABLE_ACCOUNT, ENABLE_UI, SYSTEM_FONT, HIDE_STORIES,
-        ENABLE_NET, BLOCK_PROXY_PROBE, BLOCK_AUTO_DOWNLOAD,
-        ENABLE_PRIVACY, ANTI_RECALL, HIDE_TYPING, BLOCK_READ_RECEIPT, HIDE_ONLINE,
-        ENABLE_DIAG,
-    )
+    private val BOOLEAN_KEYS get() = ALL_BOOLEAN_KEYS
 
     /** 参与导入导出的数值项。 */
-    private val INT_KEYS = listOf(MAX_ACCOUNTS)
+    private val INT_KEYS get() = ALL_INT_KEYS
 
     /** 序列化当前配置。 */
     fun exportFrom(p: SharedPreferences): String = buildString {

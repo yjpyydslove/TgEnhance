@@ -3,6 +3,7 @@ package com.yjp.tgenhance.hooks
 import android.graphics.Typeface
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.XLog
+import com.yjp.tgenhance.XLog.guard
 import com.yjp.tgenhance.XLog.safe
 import com.yjp.tgenhance.diag.HookStats
 import de.robv.android.xposed.XC_MethodHook
@@ -90,12 +91,14 @@ object ThemeHooks {
             for (method in targets) {
                 XposedBridge.hookMethod(method, object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
-                        val assetPath = param.args.getOrNull(0) as? String ?: return
-                        HookStats.hit("ui.typeface.seen")
-                        if (!Prefs.uiEnabled || !Prefs.systemFont) return
-                        val mapped = mapToSystemTypeface(assetPath) ?: return
-                        HookStats.hit("ui.typeface.replaced")
-                        param.result = mapped
+                        guard("字体替换") {
+                            val assetPath = param.args.getOrNull(0) as? String ?: return@guard
+                            HookStats.hit("ui.typeface.seen")
+                            if (!Prefs.uiEnabled || !Prefs.systemFont) return@guard
+                            val mapped = mapToSystemTypeface(assetPath) ?: return@guard
+                            HookStats.hit("ui.typeface.replaced")
+                            param.result = mapped
+                        }
                     }
                 })
             }

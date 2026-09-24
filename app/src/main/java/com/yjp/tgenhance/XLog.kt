@@ -73,4 +73,21 @@ object XLog {
             e("[$scope] 执行失败", t)
             null
         }
+
+    /**
+     * Hook 回调的统一兜底。
+     *
+     * Xposed 框架本身会捕获回调异常并继续执行原方法，但它的日志里看不出这是
+     * 模块引入的问题。模块自己再包一层，是为了在 LSPosed 日志里留下带模块前缀的
+     * 明确记录 —— 「宿主行为异常」这类问题最难排查的就是归因。
+     *
+     * 零开销：声明为 inline，高频 Hook 点（如 `getTypeface`）不会因为包装而变慢。
+     */
+    inline fun guard(scope: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (t: Throwable) {
+            e("[$scope] 回调异常（已忽略，不影响 Telegram 自身逻辑）", t)
+        }
+    }
 }

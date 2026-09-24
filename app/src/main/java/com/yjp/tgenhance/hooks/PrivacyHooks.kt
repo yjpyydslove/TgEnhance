@@ -2,6 +2,7 @@ package com.yjp.tgenhance.hooks
 
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.XLog
+import com.yjp.tgenhance.XLog.guard
 import com.yjp.tgenhance.XLog.safe
 import com.yjp.tgenhance.diag.HookStats
 import de.robv.android.xposed.XC_MethodHook
@@ -105,14 +106,16 @@ object PrivacyHooks {
         safe("防撤回") {
             XposedBridge.hookAllMethods(cls, "deleteMessages", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
-                    // 只要 deleteMessages 被调用就计数，用于判断 hook 是否还挂在活跃路径上
-                    HookStats.hit("privacy.deleteMessages")
-                    if (!Prefs.privacyEnabled || !Prefs.antiRecall) return
-                    if (!isServerSideRecall(param)) return
-                    // 短路，不执行原删除逻辑
-                    param.result = null
-                    HookStats.hit("privacy.recall.blocked")
-                    XLog.result("防撤回", "拦截一次服务器撤回 (参数个数=${param.args.size})")
+                    guard("防撤回") {
+                        // 只要 deleteMessages 被调用就计数，用于判断 hook 是否还挂在活跃路径上
+                        HookStats.hit("privacy.deleteMessages")
+                        if (!Prefs.privacyEnabled || !Prefs.antiRecall) return@guard
+                        if (!isServerSideRecall(param)) return@guard
+                        // 短路，不执行原删除逻辑
+                        param.result = null
+                        HookStats.hit("privacy.recall.blocked")
+                        XLog.result("防撤回", "拦截一次服务器撤回 (参数个数=${param.args.size})")
+                    }
                 }
             })
             XLog.result("隐私", "deleteMessages() 已接管：仅拦截服务器撤回，不影响自己删消息")
