@@ -1,5 +1,6 @@
 package com.yjp.tgenhance.diag
 
+import android.os.SystemClock
 import com.yjp.tgenhance.XLog
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -27,6 +28,16 @@ object HookStats {
      */
     const val REPORT_DELAY_MS = 90_000L
 
+    /**
+     * 单个 Hook 点触发次数的告警阈值。
+     *
+     * 达到之后提示一次：这类 Hook 点调用极频繁，如果用户感觉 Telegram 卡顿，
+     * 优先关它对应的功能最可能见效 —— 比笼统地说「可能有点慢」有用。
+     */
+    private const val HIGH_FREQUENCY_THRESHOLD = 10_000
+
+    private val startedAt = SystemClock.elapsedRealtime()
+
     private val counters = ConcurrentHashMap<String, AtomicInteger>()
 
     /**
@@ -50,8 +61,14 @@ object HookStats {
             // 首次触发立即记录。
             // 若只在固定时间点做一次性汇总，用户在那之前没操作就会看到计数为 0，
             // 从而把「还没触发」误判成「Hook 失效」—— 这是必须避免的误导。
-            if (counter.incrementAndGet() == 1) {
+            val total = counter.incrementAndGet()
+            if (total == 1) {
                 XLog.result("首次触发", name)
+            } else if (total == HIGH_FREQUENCY_THRESHOLD) {
+                XLog.w(
+                    "[统计] $name 已触发 $total 次。该 Hook 点调用极频繁，" +
+                        "若感觉 Telegram 卡顿，优先关闭它对应的功能。"
+                )
             }
         } catch (t: Throwable) {
             // 统计绝不能影响 hook 主流程
@@ -94,6 +111,13 @@ object HookStats {
             for ((name, count) in entries) {
                 val mark = if (count == 0) "  <== 未生效" else ""
                 XLog.result("统计", "$name 触发 $count 次$mark")
+            }
+
+            val uptimeSec = (SystemClock.elapsedRealtime() - startedAt) / 1000
+            val frequent = entries.filter { it.second >= HIGH_FREQUENCY_THRESHOLD }.map { it.first }
+            XLog.result("统计", "统计时长 ${uptimeSec}s，共 ${entries.size} 个 Hook 点")
+            if (frequent.isNotEmpty()) {
+                XLog.w("[统计] 高频 Hook 点：${frequent.joinToString(", ")}（卡顿时优先关对应功能）")
             }
             XLog.section("统计结束")
         } catch (t: Throwable) {
