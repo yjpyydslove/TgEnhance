@@ -461,15 +461,18 @@ object Diagnostics {
                 continue
             }
 
-            // 靠特征兜底命中的，标注出来 —— 说明官方改过这个方法名
-            val fuzzy = HookFinder.isFuzzyMatched(cls, methodName)
+            // 精确名仍在：说明官方没动这个方法名，不需要额外提示。
+            //
+            // v N1.3 修正：这里原本读 HookFinder.isFuzzyMatched(cls, methodName)
+            // 来决定要不要标「特征兜底命中」，但那一问在本分支里**恒为 false** ——
+            // 精确命中时 HookFinder 根本不会记兜底账；而精确落空时前面已经
+            // continue 走了缺失分支，压根到不了这里。
+            // 也就是说那行标注永远不显示，是条死逻辑。删掉，缺口由
+            // fuzzyMatchCheck()（整体兜底清单）负责，那里才是准确的位置。
             for (m in overloads) {
                 val params = m.parameterTypes.joinToString(",") { it.simpleName }
                 out.add(CheckItem(simpleName, "$methodName($params)", true))
-                logParts.add(
-                    "$methodName($params) -> ${m.returnType.simpleName}" +
-                        if (fuzzy) "（特征兜底命中）" else ""
-                )
+                logParts.add("$methodName($params) -> ${m.returnType.simpleName}")
             }
         }
 

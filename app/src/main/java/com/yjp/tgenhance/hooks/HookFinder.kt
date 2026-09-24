@@ -1,5 +1,6 @@
 package com.yjp.tgenhance.hooks
 
+import com.yjp.tgenhance.XLog
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.Collections
@@ -68,11 +69,30 @@ object HookFinder {
     }
 
     /**
-     * 先按显式名单精确命中，再用特征匹配兜底补漏，最后去重。
+     * 先按显式名单精确命中；**只在精确名单全部落空时**，才退到特征匹配兜底。
      *
-     * 显式名单保证「不误伤」—— 例如 `hasLiveStory` 虽然也符合特征，
-     * 但它表达的是「加载中」，强制 false 反而会打乱状态，故不列入名单；
-     * 特征兜底则保证「官方改了名字还能命中」。
+     * ### 为什么是「二选一」而不是「取并集」（v N1.3 修正）
+     *
+     * 早先的实现是把精确结果与特征结果**并集**返回，这与本函数的文档承诺相矛盾：
+     *
+     * - 显式名单的意义是「**不误伤**」—— `deleteMessages` 该挂，而同族的
+     *   `deleteMessagesByChatId` 不该挂（它会调用前者，挂上就成双重处理）。
+     * - 特征兜底的意义是「**官方改名后还能命中**」—— 是保险，不是主力。
+     *
+     * 并集把两者混在一起，于是只要特征够宽（`nameContains = "deletemessage"`），
+     * 那些**故意被排除**的方法照样会被捞进来一起 hook。
+     * 更糟的是这种误伤只在「特征还没被触发」时看不出来 ——
+     * 一旦官方改名导致精确落空，误伤面反而会**同时**扩大。
+     *
+     * 改成二选一之后，语义是清晰的：
+     *  - 精确名单有命中 → 用精确的，特征完全不参与，误伤零。
+     *  - 精确名单全落空 → 说明官方改名了，此时才启用特征兜底，
+     *    并记入 [fuzzyMatched]，让自检报告显式提示「本 Hook 点已靠特征勉强接住」。
+     *
+     * ### 传了 explicitNames 但没传特征参数时
+     *
+     * 精确全落空就直接返回空列表（没有兜底可用），调用方会走「功能不可用」分支，
+     * 这是正确行为 —— 比拿一个特征乱猜的方法去 hook 安全得多。
      */
     fun match(
         cls: Class<*>,
@@ -86,6 +106,8 @@ object HookFinder {
     ): List<Method> {
         val exact = explicitNames
             .mapNotNull { name ->
+                // 这里要先按「返回类型 / 参数个数」筛一遍再比名字：
+                // 同名重载可能有多个，签名不符的那个不该被选中
                 findMethods(
                     cls,
                     returnType = returnType,
@@ -94,6 +116,29 @@ object HookFinder {
                     maxParamCount = maxParamCount
                 ).firstOrNull { it.name.equals(name, ignoreCase = true) }
             }
+            .distinctBy { simpleSignature(it) }
+
+        if (exact.isNotEmpty()) {
+            // 精确命中：特征不参与。这是绝大多数版本上的正常路径。
+            return exact
+        }
+
+        // 精确全落空 —— 官方改名了。此时特征兜底才上场，并如实记账。
+        //
+        // 但先要过一道安全闸：**一个特征条件都不给**时，findMethods 不做名字过滤，
+        // 会把「该类型下的全部方法」返回 —— 拿它当兜底等于把整个类都 hook 了。
+        // 旧实现里这条路径是活的：三个只传 explicitNames 的调用点
+        // （强制平板 / 关闭更新 / 隐藏手机号）一旦官方改名，就会把
+        // AndroidUtilities 里每一个 boolean 方法强行改成 true，界面直接错乱。
+        // 所以这里明确拒绝无特征兜底 —— 宁可让功能走「不可用」分支。
+        if (namePrefix == null && nameContains == null) {
+            XLog.w(
+                "[适配] ${cls.simpleName} 的精确名单 ${explicitNames.joinToString(",")} 已全部落空，" +
+                    "且未提供特征兜底条件 —— 本次不做任何 hook，避免误伤整类方法"
+            )
+            return emptyList()
+        }
+
         val fuzzy = findMethods(
             cls,
             returnType = returnType,
@@ -103,16 +148,10 @@ object HookFinder {
             minParamCount = minParamCount,
             maxParamCount = maxParamCount
         )
-
-        val exactNames = exact.mapTo(HashSet()) { it.name.lowercase(Locale.ROOT) }
         for (method in fuzzy) {
-            // 只在「精确名没命中、靠特征兜底才找到」时记账
-            if (method.name.lowercase(Locale.ROOT) !in exactNames) {
-                fuzzyHits.add(cls.simpleName + "." + method.name)
-            }
+            fuzzyHits.add(cls.simpleName + "." + method.name)
         }
-
-        return (exact + fuzzy).distinctBy { simpleSignature(it) }
+        return fuzzy.distinctBy { simpleSignature(it) }
     }
 
     /**
@@ -121,16 +160,35 @@ object HookFinder {
      * 这是个很有用的适配质量指标：正常情况下应该一条都没有 ——
      * 一旦出现，说明官方改了这个方法的名字，而模块是靠特征匹配侥幸接住的。
      * 这种情况必须知道，否则下次改动幅度再大一点就会彻底失效。
+     *
+     * v N1.3 起语义变精确了：**只有 [match] 走到「精确名单全落空、启用特征兜底」
+     * 这条分支时才会记账**。早先的实现是把精确与特征取并集，于是
+     * 「某个方法名字恰好在精确名单里、同时又被特征捞到」也会被记成兜底命中，
+     * 报告里就会出现假警报 —— 用户看到「官方改名了」其实什么都没发生。
      */
     private val fuzzyHits: MutableSet<String> = Collections.synchronizedSet(HashSet())
 
-    /** 某个方法是否是靠特征兜底命中的。 */
+    /**
+     * 某个方法是否是靠特征兜底命中的。
+     *
+     * v N1.3 起要留意它的**边界**：只有「精确名单整体落空」才会记账，
+     * 所以对精确名单里的名字调用它**一定是 false** —— 那正是「精确命中了」的
+     * 通常情形。想判断「官方有没有改名」，应该看 [fuzzyMatched] 的返回值，
+     * 而不是拿精确名单里的名字来问这里。
+     */
     fun isFuzzyMatched(cls: Class<*>, methodName: String): Boolean = try {
         fuzzyHits.contains(cls.simpleName + "." + methodName)
     } catch (t: Throwable) {
         false
     }
 
+    /**
+     * 全部靠特征兜底命中的 Hook 点，形如 `类简名.方法名`。
+     *
+     * 注意它**不是**「哪些方法被 hook 了」的清单，而是「哪些 Hook 点的名字已经
+     * 和官方源码对不上」的清单。自检报告用它提示适配风险，见
+     * [com.yjp.tgenhance.diag.Diagnostics.fuzzyMatchCheck]。
+     */
     fun fuzzyMatched(): List<String> = try {
         fuzzyHits.sorted()
     } catch (t: Throwable) {
