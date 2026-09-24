@@ -342,11 +342,15 @@ class SettingsActivity : Activity() {
             root.addView(card, cardParams())
 
             val ref = SectionRef(group, titleView, card)
+            // 折叠状态持久化：切换深色模式、旋转屏幕都会重建 Activity，
+            // 不记住的话用户每次都被迫重新收起一遍不关心的分组
+            ref.collapsed = prefs.getBoolean(collapseKey(group), false)
             sectionRefs += ref
 
             // 点分组标题折叠 / 展开
             titleView.setOnClickListener {
                 ref.collapsed = !ref.collapsed
+                prefs.edit().putBoolean(collapseKey(group), ref.collapsed).apply()
                 applyFilter()
             }
 
@@ -442,6 +446,9 @@ class SettingsActivity : Activity() {
             section.titleView.text = "${section.group.title}  $arrow"
         }
     }
+
+    /** 分组折叠状态的存储 key（不参与导入导出，属于界面偏好而非功能配置）。 */
+    private fun collapseKey(group: FeatureGroup): String = "ui_collapsed_${group.name}"
 
     /**
      * 「快捷配置」卡片。
