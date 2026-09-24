@@ -243,10 +243,19 @@ object Prefs {
     /**
      * 导出格式的标识前缀。
      *
-     * 明文 `key=value;` 逐项拼接，不做 Base64 —— 用户可能想手工改一两项再导入，
-     * 也可能要贴到聊天里同步到另一台设备，可读比紧凑更重要。
+     * 带版本号是给**将来**留的退路：哪天真要重命名某个配置 key，
+     * 靠这个前缀就能识别出旧格式并做迁移，而不是让老用户的配置直接失效。
+     *
+     * 用明文 `key=value;` 逐项拼接、不做 Base64 —— 用户可能想手工改一两项再导入，
+     * 也可能要贴到聊天里同步到另一台设备，可读比紧凑重要。
      */
-    private const val CONFIG_PREFIX = "TGE1:"
+    private const val CONFIG_PREFIX = "TGE2:"
+
+    /** v3.6.0 及更早的导出前缀。字段结构相同，仅前缀不同，导入时一并接受。 */
+    private const val CONFIG_PREFIX_LEGACY = "TGE1:"
+
+    /** 导入文本的长度上限，防止误把一大段无关内容粘进来后做无谓解析。 */
+    private const val MAX_IMPORT_LENGTH = 8192
 
     /** 参与导入导出的布尔项。 */
     private val BOOLEAN_KEYS get() = ALL_BOOLEAN_KEYS
@@ -268,16 +277,22 @@ object Prefs {
     /**
      * 解析并写入配置。
      *
-     * @return 成功写入的项数；`-1` 表示前缀不对、格式无法识别。
+     * @return 成功写入的项数；`-1` 表示前缀不识别、内容过长或格式无法解析。
      *         未知的 key 会被忽略而不是报错，便于跨版本传递配置。
      */
     fun importTo(p: SharedPreferences, raw: String): Int {
         val text = raw.trim()
-        if (!text.startsWith(CONFIG_PREFIX)) return -1
+        if (text.isEmpty() || text.length > MAX_IMPORT_LENGTH) return -1
+
+        val body = when {
+            text.startsWith(CONFIG_PREFIX) -> text.removePrefix(CONFIG_PREFIX)
+            text.startsWith(CONFIG_PREFIX_LEGACY) -> text.removePrefix(CONFIG_PREFIX_LEGACY)
+            else -> return -1
+        }
 
         val editor = p.edit()
         var applied = 0
-        for (part in text.removePrefix(CONFIG_PREFIX).split(';')) {
+        for (part in body.split(';')) {
             if (part.isBlank()) continue
             val sep = part.indexOf('=')
             if (sep <= 0) continue
@@ -285,8 +300,11 @@ object Prefs {
             val value = part.substring(sep + 1).trim()
             when (key) {
                 in BOOLEAN_KEYS -> {
-                    editor.putBoolean(key, value == "1")
-                    applied++
+                    // 只认 1/0，其他值不猜
+                    if (value == "1" || value == "0") {
+                        editor.putBoolean(key, value == "1")
+                        applied++
+                    }
                 }
                 in INT_KEYS -> {
                     value.toIntOrNull()?.let {
