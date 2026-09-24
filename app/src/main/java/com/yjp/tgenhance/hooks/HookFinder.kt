@@ -109,6 +109,13 @@ object HookFinder {
      */
     private val fuzzyHits: MutableSet<String> = Collections.synchronizedSet(HashSet())
 
+    /** 某个方法是否是靠特征兜底命中的。 */
+    fun isFuzzyMatched(cls: Class<*>, methodName: String): Boolean = try {
+        fuzzyHits.contains(cls.simpleName + "." + methodName)
+    } catch (t: Throwable) {
+        false
+    }
+
     fun fuzzyMatched(): List<String> = try {
         fuzzyHits.sorted()
     } catch (t: Throwable) {

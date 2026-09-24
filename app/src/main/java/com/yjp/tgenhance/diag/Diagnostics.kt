@@ -387,10 +387,15 @@ object Diagnostics {
                 continue
             }
 
+            // 靠特征兜底命中的，标注出来 —— 说明官方改过这个方法名
+            val fuzzy = HookFinder.isFuzzyMatched(cls, methodName)
             for (m in overloads) {
                 val params = m.parameterTypes.joinToString(",") { it.simpleName }
                 out.add(CheckItem(simpleName, "$methodName($params)", true))
-                logParts.add("$methodName($params) -> ${m.returnType.simpleName}")
+                logParts.add(
+                    "$methodName($params) -> ${m.returnType.simpleName}" +
+                        if (fuzzy) "（特征兜底命中）" else ""
+                )
             }
         }
 
