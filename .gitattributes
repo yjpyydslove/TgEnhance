@@ -4,4 +4,5 @@
 *.jar binary
 *.jks binary
 *.keystore binary
+*.p12 binary
 *.apk binary
