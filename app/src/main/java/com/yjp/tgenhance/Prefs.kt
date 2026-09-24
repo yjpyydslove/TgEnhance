@@ -53,6 +53,9 @@ object Prefs {
     const val ENABLE_ADS = "enable_ads"
     const val BLOCK_SPONSORED = "block_sponsored"
 
+    // ---------------- 高级功能 ----------------
+    const val VERBOSE_LOG = "verbose_log"
+
     // ---------------- 反检测 ----------------
     const val HIDE_XPOSED = "hide_xposed"
 
@@ -270,6 +273,8 @@ object Prefs {
 
     /** 反检测：隐藏模块与 Xposed 框架的痕迹。 */
     val hideXposed: Boolean get() = hookBoolean(HIDE_XPOSED, false)
+
+    val verboseLog: Boolean get() = hookBoolean(VERBOSE_LOG, true)
 
     val adsEnabled: Boolean get() = hookBoolean(ENABLE_ADS, false)
     val blockSponsored: Boolean get() = hookBoolean(BLOCK_SPONSORED, false)

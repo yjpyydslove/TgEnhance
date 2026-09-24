@@ -63,6 +63,9 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         // 而不是埋在日志的某一行里没人注意
         XLog.onCallbackError = { HookStats.hit("internal.callbackError") }
 
+        // 详细日志开关：关掉后只留结论性输出，避免过程日志把报错挤掉
+        XLog.verbose = Prefs.verboseLog
+
         // 预登记全部 hook 点：计数器默认是「首次触发才创建」，
         // 不预登记的话未触发的项不会出现在快照里，设置界面就无法区分
         // 「功能没生效」和「这个点根本没挂上」。

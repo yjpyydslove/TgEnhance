@@ -22,6 +22,16 @@ object XLog {
     var enabled: Boolean = true
 
     /**
+     * 详细日志开关（v6.7.0）。
+     *
+     * 关掉后只保留 RESULT / WARN / ERROR 这三类结论性输出，
+     * 启动期的配置快照、逐项挂载过程就不再刷屏 —— LSPosed 日志页一次
+     * 只显示有限行数，被过程日志挤掉之后真正要紧的报错就看不见了。
+     */
+    @Volatile
+    var verbose: Boolean = true
+
+    /**
      * 回调异常的通知钩子（v6.3.0）。
      *
      * 由 [com.yjp.tgenhance.HookEntry] 在挂载时注册为「记一次内部异常计数」。
@@ -32,6 +42,7 @@ object XLog {
     var onCallbackError: ((String) -> Unit)? = null
 
     fun i(msg: String) {
+        if (!verbose) return
         Log.i(TAG, msg)
         write(msg)
     }

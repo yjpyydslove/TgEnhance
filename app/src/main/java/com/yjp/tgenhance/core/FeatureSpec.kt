@@ -236,6 +236,13 @@ object Features {
 
         // ---------------- 反检测 ----------------
         FeatureSpec(
+            key = Prefs.VERBOSE_LOG,
+            group = FeatureGroup.ADVANCED,
+            title = "详细日志",
+            summary = "在 LSPosed 日志里输出启动过程与配置快照。排查问题时才有用。",
+            default = true
+        ),
+        FeatureSpec(
             key = Prefs.HIDE_XPOSED,
             group = FeatureGroup.ADVANCED,
             default = true,
