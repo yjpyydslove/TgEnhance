@@ -75,9 +75,21 @@ class SettingsActivity : Activity() {
     }
 
     /** 组内一行（开关行或滑条行）+ 它下方的分割线：过滤时需要一起收起。 */
-    private class RowRef(val searchable: String, val views: List<View>) {
+    private class RowRef(
+        val searchable: String,
+        val views: List<View>,
+        /** 该行对应的配置开关；用于「只看已开启」筛选。 */
+        val key: String,
+        val default: Boolean = false
+    ) {
         fun matches(query: String): Boolean = searchable.contains(query)
     }
+
+    /** 只显示已开启的功能。 */
+    private var onlyEnabled: Boolean = false
+
+    /** 搜索栏下方的统计文字：已开启 N / 共 M 项。 */
+    private var statsView: TextView? = null
 
     /** 「运行状态」卡片正文；收到 hook 端回传时直接刷新它。 */
     private var statusView: TextView? = null
@@ -175,6 +187,41 @@ class SettingsActivity : Activity() {
         }
 
         box.addView(input, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+
+        // 「只看已开启」：功能一多，想确认「我到底开了哪些」比搜索更常用
+        val filterRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(12), 0, 0)
+        }
+
+        val stats = TextView(this).apply {
+            textSize = 12.5f
+            setTextColor(color(R.color.text_secondary))
+        }
+        filterRow.addView(stats, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        statsView = stats
+
+        filterRow.addView(
+            TextView(this).apply {
+                text = "只看已开启"
+                textSize = 13f
+                setTextColor(color(R.color.text_secondary))
+            }
+        )
+
+        filterRow.addView(
+            TgSwitch(this).apply {
+                isChecked = onlyEnabled
+                onCheckedChangeListener = { checked ->
+                    onlyEnabled = checked
+                    applyFilter()
+                }
+            },
+            LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { marginStart = dp(8) }
+        )
+
+        box.addView(filterRow, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         return box
     }
 
@@ -300,7 +347,9 @@ class SettingsActivity : Activity() {
                 )
                 ref.rows += RowRef(
                     searchable = (spec.title + " " + spec.summary).lowercase(),
-                    views = listOf(row)
+                    views = listOf(row),
+                    key = spec.key,
+                    default = spec.default
                 )
 
                 if (spec.key == Prefs.ENABLE_ACCOUNT) {
@@ -316,7 +365,9 @@ class SettingsActivity : Activity() {
                     )
                     ref.rows += RowRef(
                         searchable = "最大账号数 账号数量上限 账号个数",
-                        views = listOf(slider)
+                        views = listOf(slider),
+                        // 滑条跟着多账号总开关：总开关关着时它也不该出现在「只看已开启」里
+                        key = Prefs.ENABLE_ACCOUNT
                     )
                 }
             }
@@ -341,11 +392,19 @@ class SettingsActivity : Activity() {
         val query = searchQuery.trim().lowercase()
         val searching = query.isNotEmpty()
 
+        var enabledTotal = 0
+        var allTotal = 0
+
         for (section in sectionRefs) {
             var hitCount = 0
             for (ref in section.rows) {
-                val hit = !searching || ref.matches(query)
+                val enabled = prefs.getBoolean(ref.key, ref.default)
+                allTotal++
+                if (enabled) enabledTotal++
+
+                val hit = (!searching || ref.matches(query)) && (!onlyEnabled || enabled)
                 if (hit) hitCount++
+
                 val visible = hit && !section.collapsed
                 for (view in ref.views) {
                     view.visibility = if (visible) View.VISIBLE else View.GONE
@@ -358,6 +417,7 @@ class SettingsActivity : Activity() {
                 if (hasMatch && !section.collapsed) View.VISIBLE else View.GONE
         }
 
+        statsView?.text = "已开启 $enabledTotal / 共 $allTotal 项"
         updateSectionTitles()
     }
 
@@ -921,11 +981,17 @@ class SettingsActivity : Activity() {
             val message = riskMessage
             if (checked && risk != RiskLevel.NONE && !message.isNullOrBlank()) {
                 confirmRisk(title, message) { accepted ->
-                    if (accepted) prefs.edit().putBoolean(key, true).apply()
-                    else sw.isChecked = false
+                    if (accepted) {
+                        prefs.edit().putBoolean(key, true).apply()
+                        // 开关变了，「已开启 N / 共 M」与「只看已开启」的可见性都要跟着刷新
+                        applyFilter()
+                    } else {
+                        sw.isChecked = false
+                    }
                 }
             } else {
                 prefs.edit().putBoolean(key, checked).apply()
+                applyFilter()
             }
         }
     }
