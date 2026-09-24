@@ -1,11 +1,11 @@
 package com.yjp.tgenhance
 
+import android.app.AndroidAppHelper
 import com.yjp.tgenhance.diag.Diagnostics
 import com.yjp.tgenhance.hooks.AccountHooks
 import com.yjp.tgenhance.hooks.NetworkHooks
 import com.yjp.tgenhance.hooks.PrivacyHooks
 import com.yjp.tgenhance.hooks.ThemeHooks
-import de.robv.android.xposed.AndroidAppHelper
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.IXposedHookZygoteInit
 import de.robv.android.xposed.XposedHelpers
