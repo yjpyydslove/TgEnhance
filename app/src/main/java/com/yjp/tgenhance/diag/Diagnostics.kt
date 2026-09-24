@@ -5,6 +5,7 @@ import com.yjp.tgenhance.XLog
 import com.yjp.tgenhance.core.Features
 import com.yjp.tgenhance.hooks.ClientProfileDetector
 import com.yjp.tgenhance.hooks.ConflictWatch
+import com.yjp.tgenhance.hooks.HookStatus
 import de.robv.android.xposed.XposedHelpers
 
 /**
@@ -109,6 +110,7 @@ object Diagnostics {
         }
         configConsistency()?.let { items += it }
         conflictCheck()?.let { items += it }
+        availabilityCheck()?.let { items += it }
         items += frameworkCheck()
         lastReport = items
 
@@ -176,6 +178,29 @@ object Diagnostics {
             member = "被其他模块占用的 Hook 点（${list.size} 个）",
             ok = false,
             suggestions = list.take(8)
+        )
+    }
+
+    /**
+     * 功能可用性：哪些功能在当前客户端上没有找到 Hook 点。
+     *
+     * 这些功能**开关打开也不会生效**。不单独列出来的话，用户只会看到
+     * 「点了没反应」，而原因（类不存在）埋在二十多行挂载日志中间。
+     *
+     * 全部可用时返回 null，不占一行结果。
+     */
+    private fun availabilityCheck(): CheckItem? {
+        val keys = HookStatus.unavailableKeys()
+        if (keys.isEmpty()) return null
+
+        val titles = keys.map { key -> Features.find(key)?.title ?: key }
+        XLog.w("[诊断] 当前客户端不支持的功能：${titles.joinToString("、")}")
+
+        return CheckItem(
+            owner = "可用性",
+            member = "当前客户端不支持的功能（${keys.size} 项，开了也不会生效）",
+            ok = false,
+            suggestions = titles.take(8)
         )
     }
 

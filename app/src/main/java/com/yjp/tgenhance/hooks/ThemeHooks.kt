@@ -137,6 +137,7 @@ object ThemeHooks {
         val cls = ClientProfileDetector.storiesControllerClass(classLoader)
         if (cls == null) {
             XLog.w("[Stories] 所有候选路径均未命中 StoriesController，该功能在本客户端不可用")
+            HookStatus.markUnavailable(Prefs.HIDE_STORIES)
             return
         }
 

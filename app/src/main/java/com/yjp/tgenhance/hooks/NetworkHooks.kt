@@ -74,6 +74,7 @@ object NetworkHooks {
         val cls = XposedHelpers.findClassIfExists(CLS_SHARED_CONFIG, classLoader)
         if (cls == null) {
             XLog.e("[网络] 未找到 $CLS_SHARED_CONFIG")
+            HookStatus.markUnavailable(Prefs.DISABLE_AUTOPLAY)
             return
         }
 
@@ -85,6 +86,7 @@ object NetworkHooks {
         )
         if (targets.isEmpty()) {
             XLog.w("[网络] 未定位到 isAutoplay*()，禁用自动播放不可用")
+            HookStatus.markUnavailable(Prefs.DISABLE_AUTOPLAY)
             return
         }
 
@@ -140,6 +142,7 @@ object NetworkHooks {
 
         if (targets.isEmpty()) {
             XLog.w("[网络] 未定位到 canDownloadMedia(MessageObject)，阻止自动下载不可用")
+            HookStatus.markUnavailable(Prefs.BLOCK_AUTO_DOWNLOAD)
             return
         }
 
