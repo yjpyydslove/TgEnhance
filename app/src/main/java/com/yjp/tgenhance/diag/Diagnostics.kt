@@ -136,6 +136,7 @@ object Diagnostics {
         conflictCheck()?.let { items += it }
         availabilityCheck()?.let { items += it }
         installFailureCheck()?.let { items += it }
+        internalErrorCheck()?.let { items += it }
         fuzzyMatchCheck()?.let { items += it }
         items += frameworkCheck()
         // 有问题的项排前面：自检结果动辄十几行，没人会逐行读完，
@@ -226,6 +227,26 @@ object Diagnostics {
             member = "${failed.size} 组挂载失败（异常，非「类不存在」）",
             ok = false,
             suggestions = failed
+        )
+    }
+
+    /**
+     * 内部异常检查（v6.4.0）。
+     *
+     * 回调异常已被 guard 兜住、不会影响 Telegram，但「兜住了」不等于「没问题」——
+     * 它说明模块内部有逻辑在这台设备 / 这个版本上跑不通。
+     * 拎出来单独成项，免得异常一直在发生、日志一直被刷，却没人知道。
+     */
+    private fun internalErrorCheck(): CheckItem? {
+        val count = HookStats.countOf("internal.callbackError")
+        if (count <= 0) return null
+
+        XLog.w("[诊断] 捕获到 $count 次回调异常")
+        return CheckItem(
+            owner = "稳定性",
+            member = "捕获到 $count 次回调异常（已忽略，未影响 Telegram）",
+            ok = false,
+            suggestions = listOf("请反馈诊断报告，便于定位是哪台设备 / 哪个版本的问题")
         )
     }
 

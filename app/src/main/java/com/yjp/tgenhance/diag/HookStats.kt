@@ -75,6 +75,13 @@ object HookStats {
         }
     }
 
+    /** 读取某个计数点的当前值；未登记时返回 0。 */
+    fun countOf(name: String): Int = try {
+        counters[name]?.get() ?: 0
+    } catch (t: Throwable) {
+        0
+    }
+
     /**
      * 导出计数快照，供设置界面回显。
      *
