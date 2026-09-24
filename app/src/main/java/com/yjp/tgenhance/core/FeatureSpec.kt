@@ -218,6 +218,8 @@ object Features {
                 "确认开启？"
         ),
 
+        FeatureSpec(
+            key = Prefs.HIDE_PHONE,
             group = FeatureGroup.PRIVACY,
             title = "隐藏手机号",
             summary = "资料页里的手机号只保留末 4 位，其余数字用圆点遮住。"
