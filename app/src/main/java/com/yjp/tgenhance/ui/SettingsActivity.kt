@@ -7,12 +7,14 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.CompoundButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
+import android.widget.Toast
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.R
 
@@ -185,13 +187,52 @@ class SettingsActivity : Activity() {
     private fun buildFooter() {
         root.addView(
             textView(
-                "查看日志：LSPosed 管理器 → 日志，搜索关键字 TgEnhance 即可看到诊断报告。\n" +
+                "查看日志：LSPosed 管理器 → 日志，搜索关键字 TgEnhance，" +
+                    "即可看到「诊断报告」与「Hook 触发统计」两段信息。\n" +
                     "修改任何设置后，请从最近任务划掉 Telegram 再重新打开。",
                 12f,
                 R.color.text_secondary
             ).apply { setPadding(dp(8), dp(16), dp(8), 0) }
         )
+
+        root.addView(
+            Button(this).apply {
+                text = "重置所有设置"
+                setOnClickListener { confirmReset() }
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(16) }
+        )
+
+        root.addView(
+            textView("TgEnhance ${appVersionName()}", 11.5f, R.color.text_secondary).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(0, dp(14), 0, 0)
+            }
+        )
     }
+
+    private fun confirmReset() {
+        AlertDialog.Builder(this)
+            .setTitle("重置所有设置")
+            .setMessage("将把本模块的全部配置恢复为默认值。\n\n只影响本模块，不触碰 Telegram 自身数据。")
+            .setPositiveButton("重置") { _, _ ->
+                prefs.edit().clear().apply()
+                Toast.makeText(this, "已重置", Toast.LENGTH_SHORT).show()
+                recreate()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun appVersionName(): String =
+        try {
+            packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+        } catch (t: Throwable) {
+            "?"
+        }
 
     // ------------------------------------------------------------------
     // 组件构建

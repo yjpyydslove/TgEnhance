@@ -18,14 +18,26 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 object HookStats {
 
-    /** 启动后延迟多久输出统计（毫秒）。留足时间让用户触发各功能。 */
-    const val REPORT_DELAY_MS = 45_000L
+    /**
+     * 启动后延迟多久输出汇总（毫秒）。
+     *
+     * 注意：这只决定「汇总」的时机，**不影响有效性判断** ——
+     * 每个 Hook 点**首次**被触发时会立刻单独记一条日志（见 [hit]），
+     * 所以用户一旦操作就能立即在日志里看到反馈，不必等到汇总时间点。
+     */
+    const val REPORT_DELAY_MS = 90_000L
 
     private val counters = ConcurrentHashMap<String, AtomicInteger>()
 
     fun hit(name: String) {
         try {
-            counters.computeIfAbsent(name) { AtomicInteger(0) }.incrementAndGet()
+            val counter = counters.computeIfAbsent(name) { AtomicInteger(0) }
+            // 首次触发立即记录。
+            // 若只在固定时间点做一次性汇总，用户在那之前没操作就会看到计数为 0，
+            // 从而把「还没触发」误判成「Hook 失效」—— 这是必须避免的误导。
+            if (counter.incrementAndGet() == 1) {
+                XLog.result("首次触发", name)
+            }
         } catch (t: Throwable) {
             // 统计绝不能影响 hook 主流程
         }
