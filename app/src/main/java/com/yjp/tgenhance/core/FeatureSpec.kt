@@ -11,7 +11,7 @@ enum class FeatureGroup(val title: String) {
     NETWORK("网络"),
     PRIVACY("隐私与本地增强"),
     ADS("广告屏蔽"),
-    STEALTH("反检测"),
+    ADVANCED("高级功能"),
     DIAG("诊断"),
 }
 
@@ -89,7 +89,7 @@ object Features {
         ),
         FeatureSpec(
             key = Prefs.FORCE_TABLET,
-            group = FeatureGroup.UI,
+            group = FeatureGroup.ADVANCED,
             title = "强制平板布局",
             summary = "让手机也用上 Telegram 的平板界面（左右分栏）。",
             risk = RiskLevel.MEDIUM,
@@ -101,7 +101,8 @@ object Features {
         ),
         FeatureSpec(
             key = Prefs.DISABLE_UPDATE_CHECK,
-            group = FeatureGroup.UI,
+            group = FeatureGroup.ADVANCED,
+            default = true,
             title = "关闭更新提示",
             summary = "不再提示有新版本可用。"
         ),
@@ -116,7 +117,7 @@ object Features {
         ),
         FeatureSpec(
             key = Prefs.BLOCK_PROXY_PROBE,
-            group = FeatureGroup.NETWORK,
+            group = FeatureGroup.ADVANCED,
             title = "阻止代理连通性探测",
             summary = "添加代理前 Telegram 会先发一次不走代理的探测请求，存在暴露真实出口 IP 的可能。开启后跳过。",
             risk = RiskLevel.MEDIUM,
@@ -236,7 +237,8 @@ object Features {
         // ---------------- 反检测 ----------------
         FeatureSpec(
             key = Prefs.HIDE_XPOSED,
-            group = FeatureGroup.STEALTH,
+            group = FeatureGroup.ADVANCED,
+            default = true,
             title = "隐藏模块痕迹",
             summary = "阻止宿主应用检测到本模块与 Xposed 框架的存在（类名探测、堆栈帧、包名查询）。",
             risk = RiskLevel.MEDIUM,
