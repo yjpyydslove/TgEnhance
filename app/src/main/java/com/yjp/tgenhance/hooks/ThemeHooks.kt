@@ -132,9 +132,11 @@ object ThemeHooks {
     // ------------------------------------------------------------------
 
     private fun hookHideStories(classLoader: ClassLoader) {
-        val cls = XposedHelpers.findClassIfExists(CLS_STORIES_CONTROLLER, classLoader)
+        // 走候选路径：Stories 从 org.telegram.messenger 搬到 org.telegram.ui.Stories 过，
+        // 各 fork 停在哪个位置不一定
+        val cls = ClientProfileDetector.storiesControllerClass(classLoader)
         if (cls == null) {
-            XLog.w("[Stories] 未找到 $CLS_STORIES_CONTROLLER（可能是版本差异），已跳过")
+            XLog.w("[Stories] 所有候选路径均未命中 StoriesController，该功能在本客户端不可用")
             return
         }
 

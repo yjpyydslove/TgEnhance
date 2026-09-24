@@ -8,6 +8,7 @@ import com.yjp.tgenhance.diag.DiagBridge
 import com.yjp.tgenhance.diag.Diagnostics
 import com.yjp.tgenhance.diag.HookStats
 import com.yjp.tgenhance.hooks.AccountHooks
+import com.yjp.tgenhance.hooks.ClientProfileDetector
 import com.yjp.tgenhance.hooks.HookCatalog
 import com.yjp.tgenhance.hooks.HookInstaller
 import com.yjp.tgenhance.hooks.NetworkHooks
@@ -39,7 +40,16 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         if (lpparam.packageName == Prefs.MODULE_PKG) return
         if (!isTelegramClient(lpparam)) return
 
-        XLog.banner(lpparam.packageName, resolveVersion(lpparam))
+        // 先识别客户端：不同 fork 的类路径可能不同，后续挂载要靠它的解析结果
+        val profile = ClientProfileDetector.detect(lpparam.classLoader, lpparam.packageName)
+        XLog.banner(lpparam.packageName, profile.versionName)
+        XLog.result("客户端", profile.summary())
+        if (profile.launchActivity == null) {
+            XLog.w("[客户端] 未识别到主 Activity：配置热更新与诊断回传将退回系统 Activity.onResume")
+        }
+        if (profile.storiesController == null) {
+            XLog.w("[客户端] 未识别到 StoriesController：隐藏 Stories 在本客户端不可用")
+        }
 
         // 读取配置（只读 XSharedPreferences）
         Prefs.initForHook()
@@ -106,7 +116,8 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
      *  - `onResume`：用户切回 Telegram，顺手刷新一次快照。
      */
     private fun installPrefsReloadHook(classLoader: ClassLoader) {
-        val target = XposedHelpers.findClassIfExists("org.telegram.ui.LaunchActivity", classLoader)
+        // 主 Activity 走候选路径解析：第三方 fork 可能改掉 LaunchActivity 的位置
+        val target = ClientProfileDetector.launchActivityClass(classLoader)
             ?: XposedHelpers.findClassIfExists("android.app.Activity", classLoader)
         if (target == null) {
             XLog.w("[配置] 未找到可用的重载时机，改动设置后仍需重启 Telegram")
@@ -203,17 +214,6 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
             false
         }
     }
-
-    private fun resolveVersion(lpparam: XC_LoadPackage.LoadPackageParam): String =
-        try {
-            AndroidAppHelper.currentApplication()
-                ?.packageManager
-                ?.getPackageInfo(lpparam.packageName, 0)
-                ?.versionName
-                ?: "未知"
-        } catch (t: Throwable) {
-            "未知"
-        }
 
     private companion object {
         /**

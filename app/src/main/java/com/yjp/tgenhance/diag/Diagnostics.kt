@@ -3,6 +3,7 @@ package com.yjp.tgenhance.diag
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.XLog
 import com.yjp.tgenhance.core.Features
+import com.yjp.tgenhance.hooks.ClientProfileDetector
 import com.yjp.tgenhance.hooks.ConflictWatch
 import de.robv.android.xposed.XposedHelpers
 
@@ -64,13 +65,16 @@ object Diagnostics {
             listOf("checkProxy")
         ),
         Target(
-            "org.telegram.ui.Stories.StoriesController",
-            listOf("hasStories", "hasUnreadStories", "hasHiddenStories", "hasSelfStories")
-        ),
-        Target(
             "org.telegram.ui.LaunchActivity",
             listOf("onResume", "onPause")
         ),
+        // StoriesController 与主 Activity 不写死路径：各 fork 可能把它们搬到别处，
+        // 由 ClientProfileDetector 解析出实际类名后再检查（见 run）
+    )
+
+    /** Stories 相关查询方法，用于对解析出的 StoriesController 做自检。 */
+    private val STORIES_METHODS = listOf(
+        "hasStories", "hasUnreadStories", "hasHiddenStories", "hasSelfStories"
     )
 
     @Volatile
@@ -82,6 +86,24 @@ object Diagnostics {
     fun run(classLoader: ClassLoader) {
         XLog.section("诊断报告开始")
         val items = ArrayList<CheckItem>()
+
+        // 客户端信息放最前面：它是解读后面所有结果的上下文
+        val profile = ClientProfileDetector.current()
+        if (profile != null) {
+            items += CheckItem(
+                owner = "客户端",
+                member = profile.summary(),
+                ok = profile.launchActivity != null && profile.storiesController != null
+            )
+            // 用解析出的真实类路径做自检，而不是写死路径
+            profile.launchActivity?.let {
+                items += check(classLoader, Target(it, listOf("onResume", "onPause")))
+            }
+            profile.storiesController?.let {
+                items += check(classLoader, Target(it, STORIES_METHODS))
+            }
+        }
+
         for (target in TARGETS) {
             items += check(classLoader, target)
         }
