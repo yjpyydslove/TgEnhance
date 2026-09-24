@@ -466,6 +466,19 @@ class SettingsActivity : Activity() {
         val card = cardView()
         root.addView(card, cardParams())
 
+        // 放在第一位：新用户不知道该开什么，先给一个「开完就比默认好用」的组合
+        actionRow(card, "推荐配置（新手用这个）") {
+            applyPreset(
+                "推荐配置",
+                listOf(
+                    Prefs.ENABLE_UI to true,
+                    Prefs.SYSTEM_FONT to true,
+                    Prefs.HIDE_STORIES to true,
+                    Prefs.DISABLE_UPDATE_CHECK to true
+                )
+            )
+        }
+
         actionRow(card, "界面清爽：系统字体 + 隐藏 Stories") {
             applyPreset(
                 "界面清爽",
