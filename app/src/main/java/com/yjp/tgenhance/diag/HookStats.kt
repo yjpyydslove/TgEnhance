@@ -29,6 +29,21 @@ object HookStats {
 
     private val counters = ConcurrentHashMap<String, AtomicInteger>()
 
+    /**
+     * 预登记 hook 点。
+     *
+     * 计数器是「首次触发时才创建」的，若不预登记，未触发的项根本不会出现在快照里，
+     * 设置界面就无法区分「这个功能没生效」和「这个 hook 点没注册」。
+     * 各 Hook 在挂载时调用本方法登记，快照里就会出现计数为 0 的行。
+     */
+    fun expect(vararg names: String) {
+        try {
+            for (name in names) counters.computeIfAbsent(name) { AtomicInteger(0) }
+        } catch (t: Throwable) {
+            // 统计绝不能影响 hook 主流程
+        }
+    }
+
     fun hit(name: String) {
         try {
             val counter = counters.computeIfAbsent(name) { AtomicInteger(0) }
@@ -41,6 +56,30 @@ object HookStats {
         } catch (t: Throwable) {
             // 统计绝不能影响 hook 主流程
         }
+    }
+
+    /**
+     * 导出计数快照，供设置界面回显。
+     *
+     * 格式刻意用最朴素的 `key=value` 逐行文本：两端一个是 Telegram 进程、
+     * 一个是模块进程，走简单文本可以完全避开 JSON 序列化的版本差异。
+     */
+    fun snapshot(time: String): String = try {
+        buildString {
+            append(DiagProtocol.KEY_TIME).append('=').append(time).append('\n')
+            for ((name, counter) in counters.entries.sortedBy { it.key }) {
+                append(name).append('=').append(counter.get()).append('\n')
+            }
+        }
+    } catch (t: Throwable) {
+        ""
+    }
+
+    /** 快照里出现过、且真的被触发过的 hook 点数量，用于汇总展示。 */
+    fun activeCount(): Int = try {
+        counters.values.count { it.get() > 0 }
+    } catch (t: Throwable) {
+        0
     }
 
     fun report() {

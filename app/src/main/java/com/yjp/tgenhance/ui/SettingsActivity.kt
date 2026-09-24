@@ -2,6 +2,10 @@ package com.yjp.tgenhance.ui
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -20,6 +24,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.R
+import com.yjp.tgenhance.diag.DiagProtocol
 
 /**
  * 设置界面。
@@ -43,9 +48,37 @@ class SettingsActivity : Activity() {
 
     private lateinit var root: LinearLayout
 
+    /** 「运行状态」卡片正文；收到 hook 端回传时直接刷新它。 */
+    private var statusView: TextView? = null
+
+    /**
+     * 接收 hook 端的诊断快照。
+     *
+     * 用 `RECEIVER_EXPORTED` 是因为发送方是 Telegram 进程（另一个应用）；
+     * 来源可信度由令牌保证 —— 令牌只存在于本模块私有配置里，别处伪造不出来。
+     */
+    private val diagReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != DiagProtocol.ACTION) return
+
+            val token = intent.getStringExtra(DiagProtocol.EXTRA_TOKEN)
+            val expected = prefs.getString(Prefs.DIAG_TOKEN, null)
+            if (token.isNullOrEmpty() || token != expected) return
+
+            val payload = intent.getStringExtra(DiagProtocol.EXTRA_PAYLOAD) ?: return
+            prefs.edit()
+                .putString(Prefs.DIAG_SNAPSHOT, payload)
+                .putLong(Prefs.DIAG_SNAPSHOT_AT, System.currentTimeMillis())
+                .apply()
+            statusView?.text = renderSnapshot(payload)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Prefs.initForApp(this)
+        // 回传令牌必须先存在，hook 端才有东西可带
+        Prefs.ensureDiagToken()
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -66,7 +99,26 @@ class SettingsActivity : Activity() {
         buildNetworkSection()
         buildPrivacySection()
         buildDiagSection()
+        buildStatusSection()
         buildFooter()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        try {
+            registerReceiver(diagReceiver, IntentFilter(DiagProtocol.ACTION), Context.RECEIVER_EXPORTED)
+        } catch (t: Throwable) {
+            // 注册失败不影响其余功能
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        try {
+            unregisterReceiver(diagReceiver)
+        } catch (t: Throwable) {
+            // 未注册时忽略
+        }
     }
 
     // ------------------------------------------------------------------
@@ -249,6 +301,84 @@ class SettingsActivity : Activity() {
         ) { }
     }
 
+    /**
+     * 「运行状态」卡片。
+     *
+     * 把 hook 端回传的触发计数直接摊在界面上 —— 在此之前，要判断某个功能
+     * 是否真的生效，只能离开应用去翻 LSPosed 日志，普通用户根本不会做，
+     * 于是「功能静默失效」这件事长期无人察觉。
+     */
+    private fun buildStatusSection() {
+        root.addView(
+            sectionTitleView("运行状态"),
+            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+        )
+
+        val card = cardView()
+        root.addView(card, cardParams())
+
+        val body = TextView(this).apply {
+            textSize = 13f
+            setTextColor(color(R.color.text_primary))
+            setLineSpacing(dp(4).toFloat(), 1f)
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            text = renderSnapshot(prefs.getString(Prefs.DIAG_SNAPSHOT, null))
+        }
+        card.addView(body, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        statusView = body
+    }
+
+    /**
+     * 渲染 hook 端回传的快照。
+     *
+     * 快照是 `key=value` 逐行文本（见 `HookStats.snapshot`），刻意不用 JSON，
+     * 免得两个进程之间还要处理序列化差异。
+     */
+    private fun renderSnapshot(payload: String?): CharSequence {
+        if (payload.isNullOrBlank()) {
+            return "尚未收到运行报告。\n\n" +
+                "1. 先打开一次 Telegram，让模块完成挂载\n" +
+                "2. 再切回本页面（首次可能要多等几秒）\n\n" +
+                "始终没有数据时，请检查 LSPosed 里本模块是否已启用、" +
+                "「作用域」是否勾选了 Telegram。"
+        }
+
+        val timePrefix = DiagProtocol.KEY_TIME + "="
+        val lines = payload.trim().split("\n")
+        val reportTime = lines.firstOrNull { it.startsWith(timePrefix) }?.substringAfter('=') ?: "--:--:--"
+
+        val items = lines
+            .filter { it.contains('=') && !it.startsWith(timePrefix) }
+            .map { it.substringBefore('=') to (it.substringAfter('=').toIntOrNull() ?: 0) }
+
+        if (items.isEmpty()) {
+            return "报告时间 $reportTime\n\n" +
+                "报告里没有任何 hook 点 —— 模块可能没有真正挂载到 Telegram 进程。"
+        }
+
+        val sb = StringBuilder()
+        sb.append("报告时间 ").append(reportTime).append('\n')
+        sb.append("（Telegram 每次切换前后台都会刷新）\n\n")
+
+        var active = 0
+        var idle = 0
+        for ((name, count) in items) {
+            val label = HOOK_LABELS[name] ?: name
+            if (count > 0) {
+                active++
+                sb.append("● ").append(label).append("  已触发 ").append(count).append(" 次\n")
+            } else {
+                idle++
+                sb.append("○ ").append(label).append("  未触发\n")
+            }
+        }
+
+        sb.append("\n本次会话生效 ").append(active).append(" 项，未触发 ").append(idle).append(" 项。")
+        sb.append("\n\n「未触发」只代表这段时间没出现过对应动作（例如没人撤回消息），")
+        sb.append("不等于功能失效；完全没触发过的项才需要怀疑 Hook 点随版本变动。")
+        return sb.toString()
+    }
+
     private fun buildFooter() {
         root.addView(
             TextView(this).apply {
@@ -320,32 +450,12 @@ class SettingsActivity : Activity() {
         content: (LinearLayout) -> Unit
     ) {
         root.addView(
-            TextView(this).apply {
-                text = sectionTitle
-                textSize = 14f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(color(R.color.accent))
-                setPadding(dp(20), dp(24), dp(16), dp(8))
-            },
+            sectionTitleView(sectionTitle),
             LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
         )
 
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(12).toFloat()
-                setColor(color(R.color.card))
-            }
-            clipToPadding = false
-        }
-        root.addView(
-            card,
-            LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-                marginStart = dp(16)
-                marginEnd = dp(16)
-            }
-        )
+        val card = cardView()
+        root.addView(card, cardParams())
 
         switchRow(
             card,
@@ -511,6 +621,32 @@ class SettingsActivity : Activity() {
         setLineSpacing(dp(2).toFloat(), 1f)
     }
 
+    /** 分组标题：TG 官方用主色小标题置于卡片上方。 */
+    private fun sectionTitleView(text: String): TextView = TextView(this).apply {
+        this.text = text
+        textSize = 14f
+        typeface = Typeface.DEFAULT_BOLD
+        setTextColor(color(R.color.accent))
+        setPadding(dp(20), dp(24), dp(16), dp(8))
+    }
+
+    /** 12dp 圆角卡片容器。 */
+    private fun cardView(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(12).toFloat()
+            setColor(color(R.color.card))
+        }
+        clipToPadding = false
+    }
+
+    private fun cardParams(): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+            marginStart = dp(16)
+            marginEnd = dp(16)
+        }
+
     private fun rowSummary(text: String): TextView = TextView(this).apply {
         this.text = text
         textSize = 13f
@@ -603,5 +739,20 @@ class SettingsActivity : Activity() {
         const val MATCH_PARENT = ViewGroup.LayoutParams.MATCH_PARENT
         const val WRAP_CONTENT = ViewGroup.LayoutParams.WRAP_CONTENT
         const val TAG_DIVIDER = "divider"
+
+        /** hook 点 -> 用户可读名称。新增 hook 点时记得同步，否则界面会显示原始 key。 */
+        val HOOK_LABELS = mapOf(
+            "account.maxCount" to "账号上限查询",
+            "account.expand" to "账号数组扩容",
+            "ui.typeface.seen" to "字体加载请求",
+            "ui.typeface.replaced" to "字体替换",
+            "ui.stories" to "Stories 显示查询",
+            "net.proxyProbe" to "代理连通性探测",
+            "privacy.typing" to "输入状态发送",
+            "privacy.deleteMessages" to "消息删除",
+            "privacy.recall.blocked" to "拦截撤回",
+            "privacy.readReceipt.blocked" to "拦截已读上报",
+            "prefs.reload" to "配置热更新",
+        )
     }
 }

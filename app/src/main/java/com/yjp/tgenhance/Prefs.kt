@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.SystemClock
 import de.robv.android.xposed.XSharedPreferences
+import java.util.UUID
 
 /**
  * 配置项读写。
@@ -43,6 +44,13 @@ object Prefs {
 
     // ---------------- 诊断 ----------------
     const val ENABLE_DIAG = "enable_diag"
+
+    /** 回传令牌：模块侧生成，hook 侧读出后随广播带回，用于过滤伪造来源。 */
+    const val DIAG_TOKEN = "diag_token"
+
+    /** 模块侧保存的最近一次运行期快照（来自 hook 端广播）。 */
+    const val DIAG_SNAPSHOT = "diag_snapshot"
+    const val DIAG_SNAPSHOT_AT = "diag_snapshot_at"
 
     // ---------------- 取值范围 ----------------
     const val DEF_MAX_ACCOUNTS = 6
@@ -120,6 +128,28 @@ object Prefs {
             def
         }
 
+    fun hookString(key: String, def: String): String =
+        try {
+            hookPrefs?.getString(key, def) ?: def
+        } catch (t: Throwable) {
+            def
+        }
+
+    /**
+     * 模块进程：确保回传令牌已生成。
+     *
+     * hook 端会把该令牌放进诊断广播，设置界面据它判断来源是否可信；
+     * 令牌只存在于模块私有配置里，别的应用伪造不出来。
+     */
+    fun ensureDiagToken(): String {
+        val p = requireAppPrefs()
+        val existing = p.getString(DIAG_TOKEN, null)
+        if (!existing.isNullOrEmpty()) return existing
+        val token = UUID.randomUUID().toString().replace("-", "")
+        p.edit().putString(DIAG_TOKEN, token).apply()
+        return token
+    }
+
     // ---------------- 语义化访问 ----------------
 
     val accountEnabled: Boolean get() = hookBoolean(ENABLE_ACCOUNT, false)
@@ -141,4 +171,7 @@ object Prefs {
     val antiRecall: Boolean get() = hookBoolean(ANTI_RECALL, false)
     val hideTyping: Boolean get() = hookBoolean(HIDE_TYPING, false)
     val blockReadReceipt: Boolean get() = hookBoolean(BLOCK_READ_RECEIPT, false)
+
+    /** hook 侧读取回传令牌；为空说明用户还没打开过设置界面。 */
+    val diagToken: String get() = hookString(DIAG_TOKEN, "")
 }

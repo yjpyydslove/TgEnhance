@@ -2,6 +2,7 @@ package com.yjp.tgenhance
 
 import android.app.AndroidAppHelper
 import android.os.Handler
+import com.yjp.tgenhance.diag.DiagBridge
 import com.yjp.tgenhance.diag.Diagnostics
 import com.yjp.tgenhance.diag.HookStats
 import com.yjp.tgenhance.hooks.AccountHooks
@@ -38,6 +39,18 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         // 读取配置（只读 XSharedPreferences）
         Prefs.initForHook()
 
+        // 预登记全部 hook 点：计数器默认是「首次触发才创建」，
+        // 不预登记的话未触发的项不会出现在快照里，设置界面就无法区分
+        // 「功能没生效」和「这个点根本没挂上」。
+        HookStats.expect(
+            "account.maxCount", "account.expand",
+            "ui.typeface.seen", "ui.typeface.replaced", "ui.stories",
+            "net.proxyProbe",
+            "privacy.typing", "privacy.deleteMessages", "privacy.recall.blocked",
+            "privacy.readReceipt.blocked",
+            "prefs.reload",
+        )
+
         XLog.safe("AccountHooks") { AccountHooks.install(lpparam.classLoader) }
         XLog.safe("ThemeHooks") { ThemeHooks.install(lpparam.classLoader) }
         XLog.safe("NetworkHooks") { NetworkHooks.install(lpparam.classLoader) }
@@ -56,7 +69,7 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
     }
 
     /**
-     * 挂载「配置热更新」钩子。
+     * 挂载「配置热更新 + 诊断回传」钩子。
      *
      * v2.0.0 起所有 Hook 都常驻，开关改为在回调里实时读 `Prefs.*`，
      * 所以只要让 hook 端重新加载一次配置文件，多数设置就能**免重启**生效。
@@ -64,6 +77,11 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
      * 时机选 Telegram 主界面 `LaunchActivity.onResume`：用户从模块设置页切回
      * Telegram 时必然触发。Telegram 是单 Activity 架构，挂这一个就够。
      * 找不到该类时退回系统 `Activity.onResume`（[Prefs.reload] 内部有 1 秒节流）。
+     *
+     * 同时在这里做诊断回传（v2.1.0）：
+     *  - `onPause`：用户切走去设置界面，此刻发一次，另延迟 2 秒补发一次
+     *    （贴住「设置界面注册完接收器」的时间点，否则首屏看不到数据）。
+     *  - `onResume`：用户切回 Telegram，顺手刷新一次快照。
      */
     private fun installPrefsReloadHook(classLoader: ClassLoader) {
         val target = XposedHelpers.findClassIfExists("org.telegram.ui.LaunchActivity", classLoader)
@@ -77,9 +95,32 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
             override fun afterHookedMethod(param: MethodHookParam) {
                 HookStats.hit("prefs.reload")
                 Prefs.reload()
+                DiagBridge.broadcast()
             }
         })
-        XLog.result("配置", "已在 ${target.name}.onResume 挂载配置热更新：改设置切回即生效")
+
+        XposedBridge.hookAllMethods(target, "onPause", object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                DiagBridge.broadcast()
+                // 补发一次：此刻模块设置界面可能刚启动、接收器还没注册好
+                scheduleDelayedBroadcast(param.thisObject)
+            }
+        })
+
+        XLog.result("配置", "已在 ${target.name}.onResume/onPause 挂载热更新与诊断回传")
+    }
+
+    /** 延迟补发一次诊断快照。 */
+    private fun scheduleDelayedBroadcast(activity: Any?) {
+        try {
+            val ctx = activity as? android.content.Context ?: return
+            Handler(ctx.mainLooper).postDelayed(
+                { DiagBridge.broadcast() },
+                DIAG_REBROADCAST_DELAY_MS
+            )
+        } catch (t: Throwable) {
+            XLog.e("[诊断] 安排补发失败", t)
+        }
     }
 
     /**
@@ -144,4 +185,14 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         } catch (t: Throwable) {
             "未知"
         }
+
+    private companion object {
+        /**
+         * `onPause` 之后延迟补发诊断快照的间隔。
+         *
+         * 用户从 Telegram 切到模块设置界面时，设置界面刚走完 onCreate 还没注册
+         * 广播接收器，立即发出的那条会被丢掉；延迟一点补发，首屏就能看到数据。
+         */
+        const val DIAG_REBROADCAST_DELAY_MS = 2_000L
+    }
 }
