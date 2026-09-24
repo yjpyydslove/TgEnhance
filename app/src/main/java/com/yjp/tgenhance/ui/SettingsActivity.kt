@@ -730,10 +730,13 @@ class SettingsActivity : Activity() {
 
         root.addView(
             TextView(this).apply {
-                text = "TgEnhance ${appVersionName()}"
+                // 版本 + 当前客户端：反馈问题时这两个值几乎是必填项，
+                // 放在最显眼的位置，省得让人去别处找
+                text = bottomInfoText()
                 textSize = 12f
                 setTextColor(color(R.color.text_secondary))
                 gravity = Gravity.CENTER_HORIZONTAL
+                setLineSpacing(dp(3).toFloat(), 1f)
             },
             LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(16) }
         )
@@ -880,6 +883,24 @@ class SettingsActivity : Activity() {
 
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    /** 底部信息：模块版本 + （若已收到回传）客户端名称与版本。 */
+    private fun bottomInfoText(): CharSequence = buildString {
+        append("TgEnhance ").append(appVersionName())
+        clientSummaryFromSnapshot()?.let {
+            append('\n').append(it)
+        }
+    }
+
+    /** 从最近一次回传的自检结果里抽出客户端信息（自检里以「客户端#...」的形式给出）。 */
+    private fun clientSummaryFromSnapshot(): String? {
+        val payload = prefs.getString(Prefs.DIAG_SNAPSHOT, null) ?: return null
+        return payload.lines()
+            .firstOrNull { it.contains('#') && it.contains("客户端") }
+            ?.substringAfter('#')
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
     }
 
     private fun confirmReset() {
