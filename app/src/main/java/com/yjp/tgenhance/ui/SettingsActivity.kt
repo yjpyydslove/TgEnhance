@@ -887,6 +887,9 @@ class SettingsActivity : Activity() {
             "privacy.recall.blocked" to "拦截撤回",
             "privacy.readReceipt.blocked" to "拦截已读上报",
             "privacy.hideOnline" to "隐藏在线状态",
+            "stealth.classLoad" to "拒绝框架类查询",
+            "stealth.stackTrace" to "剔除框架堆栈帧",
+            "stealth.pkgQuery" to "拒绝模块包名查询",
             "prefs.reload" to "配置热更新",
         )
     }

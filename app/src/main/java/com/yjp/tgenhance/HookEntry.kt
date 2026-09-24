@@ -8,6 +8,7 @@ import com.yjp.tgenhance.diag.HookStats
 import com.yjp.tgenhance.hooks.AccountHooks
 import com.yjp.tgenhance.hooks.NetworkHooks
 import com.yjp.tgenhance.hooks.PrivacyHooks
+import com.yjp.tgenhance.hooks.StealthHooks
 import com.yjp.tgenhance.hooks.ThemeHooks
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.IXposedHookZygoteInit
@@ -48,6 +49,7 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
             "net.proxyProbe", "net.autoDownload.blocked",
             "privacy.typing", "privacy.deleteMessages", "privacy.recall.blocked",
             "privacy.readReceipt.blocked", "privacy.hideOnline",
+            "stealth.classLoad", "stealth.stackTrace", "stealth.pkgQuery",
             "prefs.reload",
         )
 
@@ -55,6 +57,7 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         XLog.safe("ThemeHooks") { ThemeHooks.install(lpparam.classLoader) }
         XLog.safe("NetworkHooks") { NetworkHooks.install(lpparam.classLoader) }
         XLog.safe("PrivacyHooks") { PrivacyHooks.install(lpparam.classLoader) }
+        XLog.safe("StealthHooks") { StealthHooks.install(lpparam.classLoader) }
         XLog.safe("PrefsReload") { installPrefsReloadHook(lpparam.classLoader) }
 
         if (Prefs.diagEnabled) {

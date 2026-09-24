@@ -10,6 +10,7 @@ enum class FeatureGroup(val title: String) {
     UI("界面与主题"),
     NETWORK("网络"),
     PRIVACY("隐私与本地增强"),
+    STEALTH("反检测"),
     DIAG("诊断"),
 }
 
@@ -162,6 +163,25 @@ object Features {
                 "只会看到「最后上线」停在你开启这项功能之前的某个时间点。\n\n" +
                 "这会影响别人对你的回复预期 —— 对方可能以为你一直没看手机。\n\n" +
                 "确认开启？"
+        ),
+
+        // ---------------- 反检测 ----------------
+        FeatureSpec(
+            key = Prefs.HIDE_XPOSED,
+            group = FeatureGroup.STEALTH,
+            title = "隐藏模块痕迹",
+            summary = "阻止宿主应用检测到本模块与 Xposed 框架的存在（类名探测、堆栈帧、包名查询）。",
+            risk = RiskLevel.MEDIUM,
+            riskMessage = "开启后会挡掉三类探测：\n\n" +
+                "1. 按类名加载 Xposed 相关类 —— 直接拒绝\n" +
+                "2. 抓异常堆栈找框架帧 —— 剔除后再返回\n" +
+                "3. 查询本模块包名 —— 报「未安装」\n\n" +
+                "需要注意：\n" +
+                "· 这只是让痕迹不可见，不改变模块已经注入的事实，也不影响本模块自身的功能。\n" +
+                "· 若你的作用域里勾了系统框架，其他应用的 Xposed 检测也会一并被挡，\n" +
+                "  可能与别的模块产生冲突。\n\n" +
+                "确认开启？",
+            isGroupRoot = true
         ),
 
         // ---------------- 诊断 ----------------
