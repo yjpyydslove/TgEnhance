@@ -370,7 +370,12 @@ class SettingsActivity : Activity() {
                     default = spec.default
                 )
                 ref.rows += RowRef(
-                    searchable = (spec.title + " " + spec.summary).lowercase(),
+                    // 英文关键词也要能搜到：用惯了英文界面的人第一反应是敲 font、
+                    // ads、recall，而不是切中文输入法
+                    searchable = (
+                        spec.title + " " + spec.summary + " " +
+                            EN_KEYWORDS[spec.key].orEmpty()
+                        ).lowercase(),
                     views = listOf(row),
                     key = spec.key,
                     default = spec.default
@@ -1227,6 +1232,37 @@ class SettingsActivity : Activity() {
         const val WRAP_CONTENT = ViewGroup.LayoutParams.WRAP_CONTENT
         const val TAG_DIVIDER = "divider"
         const val CLIP_LABEL = "TgEnhance 配置"
+
+        /**
+         * 功能 -> 英文关键词。
+         *
+         * 只放用户最可能直接敲的词，不做完整翻译 —— 搜索是「想起来什么敲什么」，
+         * 关键词表短一点反而更好维护。
+         */
+        val EN_KEYWORDS = mapOf(
+            Prefs.ENABLE_ACCOUNT to "account multi",
+            Prefs.ENABLE_UI to "ui theme",
+            Prefs.SYSTEM_FONT to "font typeface",
+            Prefs.HIDE_STORIES to "story stories",
+            Prefs.ENABLE_NET to "network net",
+            Prefs.BLOCK_AUTO_DOWNLOAD to "download auto save data",
+            Prefs.DISABLE_AUTOPLAY to "gif video autoplay",
+            Prefs.ENABLE_PRIVACY to "privacy",
+            Prefs.HIDE_TYPING to "typing input",
+            Prefs.ANTI_RECALL to "recall revoke delete",
+            Prefs.BLOCK_READ_RECEIPT to "read receipt seen",
+            Prefs.HIDE_ONLINE to "online status ghost",
+            Prefs.HIDE_PEER_ONLINE to "online peer",
+            Prefs.HIDE_PEER_STATUS to "status last seen",
+            Prefs.HIDE_PHONE to "phone number",
+            Prefs.ENABLE_ADS to "ad ads",
+            Prefs.BLOCK_SPONSORED to "sponsor promoted",
+            Prefs.FORCE_TABLET to "tablet layout pad",
+            Prefs.DISABLE_UPDATE_CHECK to "update upgrade",
+            Prefs.HIDE_XPOSED to "xposed stealth hide detect",
+            Prefs.VERBOSE_LOG to "log verbose debug",
+            Prefs.ENABLE_DIAG to "diagnose self check",
+        )
 
         // 「关闭全部功能」的 key 清单、以及「导入时需要风险确认的 key 清单」，
         // v3.0.0 起一律从 Features 注册表派生（Features.disableAllKeys /
