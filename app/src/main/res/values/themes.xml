@@ -13,6 +13,10 @@
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>
         <item name="android:windowLightStatusBar">true</item>
+        <!-- Android 15 起强制 edge-to-edge，系统栏会压在内容上。
+             这里显式声明「内容自己处理安全区」，配合 SettingsActivity 里的
+             OnApplyWindowInsetsListener 使用；在更早的版本上该属性本身无效，无副作用。 -->
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">false</item>
         <item name="android:alertDialogTheme">@style/AppDialogTheme</item>
         <item name="android:windowContentTransitions">false</item>
     </style>

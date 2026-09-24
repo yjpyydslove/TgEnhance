@@ -141,6 +141,20 @@ class SettingsActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(color(R.color.bg))
         }
+
+        // Android 15（targetSdk 35）起系统强制 edge-to-edge：内容会一直画到
+        // 状态栏和导航栏底下，主题里设的 statusBarColor 也不再生效。
+        // 不自己留安全区的话，标题与搜索框会被状态栏盖住、底部按钮会压在导航条上。
+        shell.setOnApplyWindowInsetsListener { view, insets ->
+            view.setPadding(
+                insets.systemWindowInsetLeft,
+                insets.systemWindowInsetTop,
+                insets.systemWindowInsetRight,
+                insets.systemWindowInsetBottom
+            )
+            insets
+        }
+
         shell.addView(buildSearchBar(), LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         shell.addView(scroll, LinearLayout.LayoutParams(MATCH_PARENT, 0).apply { weight = 1f })
         setContentView(shell)

@@ -7,6 +7,8 @@
         <item name="android:statusBarColor">@color/bg</item>
         <item name="android:navigationBarColor">@color/bg</item>
         <item name="android:windowLightStatusBar">false</item>
+        <!-- 同 values/themes.xml：内容自己处理系统栏安全区 -->
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">false</item>
         <item name="android:alertDialogTheme">@style/AppDialogTheme</item>
         <item name="android:windowContentTransitions">false</item>
     </style>
