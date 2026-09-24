@@ -72,18 +72,20 @@ object HookFinder {
         explicitNames: List<String> = emptyList(),
         returnType: Class<*>? = null,
         namePrefix: String? = null,
-        nameContains: String? = null
+        nameContains: String? = null,
+        paramCount: Int? = null
     ): List<Method> {
         val exact = explicitNames
             .mapNotNull { name ->
-                findMethods(cls, returnType = returnType)
+                findMethods(cls, returnType = returnType, paramCount = paramCount)
                     .firstOrNull { it.name.equals(name, ignoreCase = true) }
             }
         val fuzzy = findMethods(
             cls,
             returnType = returnType,
             namePrefix = namePrefix,
-            nameContains = nameContains
+            nameContains = nameContains,
+            paramCount = paramCount
         )
         return (exact + fuzzy).distinctBy { simpleSignature(it) }
     }
