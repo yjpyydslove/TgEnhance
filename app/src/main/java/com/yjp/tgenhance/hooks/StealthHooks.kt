@@ -1,5 +1,7 @@
 package com.yjp.tgenhance.hooks
 
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.XLog
@@ -59,6 +61,7 @@ object StealthHooks {
         hookStackTrace(classLoader, "java.lang.Throwable")
         hookStackTrace(classLoader, "java.lang.Thread")
         hookPackageQuery(classLoader)
+        hookInstalledPackages(classLoader)
         hookMethodModifiers(classLoader)
     }
 
@@ -169,6 +172,60 @@ object StealthHooks {
             })
             XLog.result("反检测", "getPackageInfo() 已接管：模块自身包名的查询将被拒绝")
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 3.5 包列表隐身
+    // ------------------------------------------------------------------
+
+    /**
+     * 从「已安装应用列表」里剔除本模块（v5.6.0）。
+     *
+     * 只拦 `getPackageInfo` 是不够的：检测方更常用的是**列一遍所有已安装应用**
+     * 再按包名找可疑项 —— 这个查询不针对具体包名，前面那条拦截自然管不到。
+     *
+     * 做法是把返回列表里的模块条目滤掉。**不去改 QueryIntentActivities 之类** ——
+     * 那会影响宿主正常的功能（比如分享目标、跳转判断），收益远小于风险。
+     */
+    private fun hookInstalledPackages(classLoader: ClassLoader) {
+        val cls = XposedHelpers.findClassIfExists(
+            "android.app.ApplicationPackageManager", classLoader
+        )
+        if (cls == null) {
+            XLog.w("[反检测] 未找到 ApplicationPackageManager，包列表隐身不可用")
+            return
+        }
+
+        safe("包列表隐身") {
+            var hooked = 0
+            for (name in listOf("getInstalledPackages", "getInstalledApplications")) {
+                hooked += HookInstaller.hookAllByName(cls, name, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        guard("包列表隐身") {
+                            if (!Prefs.hideXposed) return@guard
+                            val raw = param.result as? List<*> ?: return@guard
+
+                            val filtered = raw.filterNot { isModuleEntry(it) }
+                            if (filtered.size == raw.size) return@guard
+
+                            HookStats.hit("stealth.pkgList")
+                            param.result = filtered
+                        }
+                    }
+                })
+            }
+            XLog.result("反检测", "已安装包列表查询已接管 $hooked 处：模块自身会被剔除")
+        }
+    }
+
+    private fun isModuleEntry(entry: Any?): Boolean = try {
+        when (entry) {
+            is PackageInfo -> entry.packageName == Prefs.MODULE_PKG
+            is ApplicationInfo -> entry.packageName == Prefs.MODULE_PKG
+            else -> false
+        }
+    } catch (t: Throwable) {
+        false
     }
 
     // ------------------------------------------------------------------

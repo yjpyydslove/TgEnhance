@@ -49,11 +49,13 @@ object HookCatalog {
         HookPoint("privacy.recall.blocked", "拦截撤回"),
         HookPoint("privacy.readReceipt.blocked", "拦截已读上报"),
         HookPoint("privacy.hideOnline", "隐藏在线状态"),
+        HookPoint("privacy.peerOnline", "隐藏对方在线"),
 
         // 反检测
         HookPoint("stealth.classLoad", "拒绝框架类查询"),
         HookPoint("stealth.stackTrace", "剔除框架堆栈帧"),
         HookPoint("stealth.pkgQuery", "拒绝模块包名查询"),
+        HookPoint("stealth.pkgList", "清除包列表条目"),
         HookPoint("stealth.modifiers", "抹除 native 标志"),
 
         // 框架

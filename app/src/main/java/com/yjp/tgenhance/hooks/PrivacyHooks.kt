@@ -54,19 +54,26 @@ import de.robv.android.xposed.XposedHelpers
 object PrivacyHooks {
 
     private const val CLS_MESSAGES_CONTROLLER = "org.telegram.messenger.MessagesController"
+    private const val CLS_LOCALE_CONTROLLER = "org.telegram.messenger.LocaleController"
+
+    /** 缓存 LocaleController 的 Class，取本地化文本时要用。 */
+    @Volatile
+    private var localeControllerClass: Class<*>? = null
 
     fun install(classLoader: ClassLoader) {
         XLog.section("隐私与本地增强")
         XLog.i(
             "[隐私] 配置快照：防撤回=${Prefs.antiRecall}、" +
                 "隐藏输入=${Prefs.hideTyping}、不上报已读=${Prefs.blockReadReceipt}、" +
-                "隐藏在线=${Prefs.hideOnline}（运行期实时读取，改设置无需重启）"
+                "隐藏在线=${Prefs.hideOnline}、隐藏对方在线=${Prefs.hidePeerOnline}" +
+                "（运行期实时读取，改设置无需重启）"
         )
 
         hookHideTyping(classLoader)
         hookAntiRecall(classLoader)
         hookBlockReadReceipt(classLoader)
         hookHideOnline(classLoader)
+        hookHidePeerOnline(classLoader)
     }
 
     // ------------------------------------------------------------------
@@ -282,5 +289,73 @@ object PrivacyHooks {
             })
             XLog.result("隐私", "updateTimerProc() 已接管：开启后不再上报在线状态")
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 隐藏对方的在线状态
+    // ------------------------------------------------------------------
+
+    /**
+     * 隐藏对方的在线状态（v5.6.0 新增）。
+     *
+     * hook `LocaleController.formatUserStatus(...)`（源码 2888 / 2919 / 2923 三个重载）——
+     * 它是「对方在线 / 最后上线于 …」这段文字的唯一生成处，返回 String，
+     * 参数里的 `boolean[] isOnline` 是出参，界面靠它决定要不要画那个小绿点。
+     *
+     * 处理方式很克制：`isOnline[0]` 为 true 时改回 false，显示文本换成 Telegram 自己的
+     * `Lately`（「最近上线」）。**不编造时间** —— 显示的内容仍然是 Telegram 给出的真实状态，
+     * 只是不告诉你「对方此刻正在线」这一条动态信息。
+     */
+    private fun hookHidePeerOnline(classLoader: ClassLoader) {
+        val cls = XposedHelpers.findClassIfExists(CLS_LOCALE_CONTROLLER, classLoader)
+        if (cls == null) {
+            XLog.e("[隐私] 未找到 $CLS_LOCALE_CONTROLLER")
+            return
+        }
+        localeControllerClass = cls
+
+        val targets = HookFinder.findMethods(
+            cls,
+            returnType = String::class.java,
+            namePrefix = "formatUserStatus"
+        )
+        if (targets.isEmpty()) {
+            XLog.w("[隐私] 未定位到 formatUserStatus，隐藏对方在线状态不可用")
+            HookStatus.markUnavailable(Prefs.HIDE_PEER_ONLINE)
+            return
+        }
+
+        safe("隐藏对方在线状态") {
+            for (method in targets) {
+                HookInstaller.hookMethodQuietly(method, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        guard("隐藏对方在线状态") {
+                            if (!Prefs.privacyEnabled || !Prefs.hidePeerOnline) return@guard
+
+                            val isOnline = param.args
+                                .filterIsInstance<BooleanArray>()
+                                .firstOrNull() ?: return@guard
+                            if (!isOnline[0]) return@guard
+
+                            isOnline[0] = false
+                            latelyText()?.let { param.result = it }
+                            HookStats.hit("privacy.peerOnline")
+                        }
+                    }
+                })
+            }
+            XLog.result(
+                "隐私",
+                "formatUserStatus() 已接管 ${targets.size} 个重载：开启后对方不再显示「在线」"
+            )
+        }
+    }
+
+    /** 取「最近上线」的本地化文本；取不到时保留原文，不做无意义的兜底。 */
+    private fun latelyText(): String? = try {
+        val cls = localeControllerClass ?: return null
+        XposedHelpers.callStaticMethod(cls, "getString", "Lately", 0) as? String
+    } catch (t: Throwable) {
+        null
     }
 }

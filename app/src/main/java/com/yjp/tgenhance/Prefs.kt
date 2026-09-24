@@ -44,6 +44,7 @@ object Prefs {
     const val HIDE_TYPING = "hide_typing"
     const val BLOCK_READ_RECEIPT = "block_read_receipt"
     const val HIDE_ONLINE = "hide_online"
+    const val HIDE_PEER_ONLINE = "hide_peer_online"
 
     // ---------------- 反检测 ----------------
     const val HIDE_XPOSED = "hide_xposed"
@@ -255,6 +256,7 @@ object Prefs {
     val hideTyping: Boolean get() = hookBoolean(HIDE_TYPING, false)
     val blockReadReceipt: Boolean get() = hookBoolean(BLOCK_READ_RECEIPT, false)
     val hideOnline: Boolean get() = hookBoolean(HIDE_ONLINE, false)
+    val hidePeerOnline: Boolean get() = hookBoolean(HIDE_PEER_ONLINE, false)
 
     /** 反检测：隐藏模块与 Xposed 框架的痕迹。 */
     val hideXposed: Boolean get() = hookBoolean(HIDE_XPOSED, false)

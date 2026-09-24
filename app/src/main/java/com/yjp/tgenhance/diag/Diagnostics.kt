@@ -58,6 +58,10 @@ object Diagnostics {
             listOf("deleteMessages", "sendTyping", "completeReadTask")
         ),
         Target(
+            "org.telegram.messenger.LocaleController",
+            listOf("formatUserStatus")
+        ),
+        Target(
             "org.telegram.messenger.AndroidUtilities",
             listOf("getTypeface")
         ),

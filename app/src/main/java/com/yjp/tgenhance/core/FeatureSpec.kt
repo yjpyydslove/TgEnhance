@@ -170,6 +170,20 @@ object Features {
                 "这会影响别人对你的回复预期 —— 对方可能以为你一直没看手机。\n\n" +
                 "确认开启？"
         ),
+        FeatureSpec(
+            key = Prefs.HIDE_PEER_ONLINE,
+            group = FeatureGroup.PRIVACY,
+            title = "隐藏对方的在线状态",
+            summary = "对方明明在线时，界面上也只显示「最近上线」。",
+            risk = RiskLevel.MEDIUM,
+            riskMessage = "这是「隐藏在线状态」的反向版本：\n\n" +
+                "· 前面那项是**不让别人看到你**在线\n" +
+                "· 这项是**不让你看到别人**在线\n\n" +
+                "开启后，对方的状态文本会被替换成「最近上线」，" +
+                "聊天列表与聊天页顶部的小绿点也会一起消失。\n\n" +
+                "显示的内容仍然是 Telegram 自己给出的真实状态，不会编造时间。\n\n" +
+                "确认开启？"
+        ),
 
         // ---------------- 反检测 ----------------
         FeatureSpec(
