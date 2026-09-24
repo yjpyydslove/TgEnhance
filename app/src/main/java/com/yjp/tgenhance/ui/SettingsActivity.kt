@@ -92,6 +92,9 @@ class SettingsActivity : Activity() {
     /** 搜索栏下方的统计文字：已开启 N / 共 M 项。 */
     private var statsView: TextView? = null
 
+    /** 底部的版本/客户端信息，收到回传后需要刷新。 */
+    private var bottomView: TextView? = null
+
     /** 「运行状态」卡片正文；收到 hook 端回传时直接刷新它。 */
     private var statusView: TextView? = null
 
@@ -115,6 +118,9 @@ class SettingsActivity : Activity() {
                 .putLong(Prefs.DIAG_SNAPSHOT_AT, System.currentTimeMillis())
                 .apply()
             statusView?.text = renderSnapshot(payload)
+            // 底部信息里的客户端一项来自回传，收到报告后要跟着刷新，
+            // 否则首次打开时那行会一直是「没有客户端信息」
+            bottomView?.text = bottomInfoText()
         }
     }
 
@@ -746,7 +752,7 @@ class SettingsActivity : Activity() {
                 setTextColor(color(R.color.text_secondary))
                 gravity = Gravity.CENTER_HORIZONTAL
                 setLineSpacing(dp(3).toFloat(), 1f)
-            },
+            }.also { bottomView = it },
             LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(16) }
         )
     }

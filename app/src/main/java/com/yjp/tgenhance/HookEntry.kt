@@ -252,7 +252,7 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
             false
         }
 
-        // 包名看着像 Telegram 系、但核心类不存在 —— 可能是没勾作用域的其它 proess，
+        // 包名看着像 Telegram 系、但核心类不存在 —— 可能是没勾作用域的其它进程，
         // 也可能是我们没见过的架构。两者都值得留一行日志，而不是安静地走开。
         if (!hasUserConfig && (pkg.contains("telegram") || pkg.contains("gram"))) {
             XLog.w(

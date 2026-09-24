@@ -96,7 +96,9 @@ object Prefs {
      * 新增开关时忘记同步就会导致该项进不了内存快照，只能回退直读文件。
      * 现在结构上不可能漏。
      */
-    private val ALL_BOOLEAN_KEYS: List<String> get() = Features.ALL.map { it.key }
+    // 用 lazy 而不是 getter：原写法每次读取都重建一次 list，
+    // 而 refreshSnapshot 会遍历它 —— 没必要反复分配
+    private val ALL_BOOLEAN_KEYS: List<String> by lazy { Features.ALL.map { it.key } }
 
     private val ALL_INT_KEYS = listOf(MAX_ACCOUNTS)
 
