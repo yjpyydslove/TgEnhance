@@ -63,7 +63,15 @@ object Diagnostics {
         ),
         Target(
             "org.telegram.messenger.AndroidUtilities",
-            listOf("getTypeface")
+            listOf("getTypeface", "isTabletForce")
+        ),
+        Target(
+            "org.telegram.messenger.SharedConfig",
+            listOf("isAutoplayVideo", "isAutoplayGifs", "isAppUpdateAvailable")
+        ),
+        Target(
+            "org.telegram.PhoneFormat.PhoneFormat",
+            listOf("format")
         ),
         Target(
             "org.telegram.tgnet.ConnectionsManager",

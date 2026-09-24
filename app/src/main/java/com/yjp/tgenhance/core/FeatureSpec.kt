@@ -86,6 +86,24 @@ object Features {
             title = "隐藏 Stories",
             summary = "收起聊天列表顶部的 Stories 环与相关入口。"
         ),
+        FeatureSpec(
+            key = Prefs.FORCE_TABLET,
+            group = FeatureGroup.UI,
+            title = "强制平板布局",
+            summary = "让手机也用上 Telegram 的平板界面（左右分栏）。",
+            risk = RiskLevel.MEDIUM,
+            riskMessage = "开启后 Telegram 会按平板模式重排界面：聊天列表与内容左右分栏。\n\n" +
+                "注意：\n" +
+                "· 手机屏幕较窄时布局会比较挤，部分弹窗位置可能不理想。\n" +
+                "· 需要重启 Telegram 才会完整生效。\n\n" +
+                "确认开启？"
+        ),
+        FeatureSpec(
+            key = Prefs.DISABLE_UPDATE_CHECK,
+            group = FeatureGroup.UI,
+            title = "关闭更新提示",
+            summary = "不再提示有新版本可用。"
+        ),
 
         // ---------------- 网络 ----------------
         FeatureSpec(
@@ -183,6 +201,12 @@ object Features {
                 "聊天列表与聊天页顶部的小绿点也会一起消失。\n\n" +
                 "显示的内容仍然是 Telegram 自己给出的真实状态，不会编造时间。\n\n" +
                 "确认开启？"
+        ),
+        FeatureSpec(
+            key = Prefs.HIDE_PHONE,
+            group = FeatureGroup.PRIVACY,
+            title = "隐藏手机号",
+            summary = "资料页里的手机号只保留末 4 位，其余数字用圆点遮住。"
         ),
 
         // ---------------- 反检测 ----------------

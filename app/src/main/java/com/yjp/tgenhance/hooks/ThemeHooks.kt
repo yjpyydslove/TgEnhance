@@ -37,6 +37,7 @@ object ThemeHooks {
 
     private const val CLS_ANDROID_UTILITIES = "org.telegram.messenger.AndroidUtilities"
     private const val CLS_STORIES_CONTROLLER = "org.telegram.ui.Stories.StoriesController"
+    private const val CLS_SHARED_CONFIG = "org.telegram.messenger.SharedConfig"
 
     /** 只替换这些 Telegram 内嵌 Roboto 字族，避免误伤 emoji / 特殊字体。 */
     private val REPLACEABLE_FONT_KEYS = listOf(
@@ -58,12 +59,15 @@ object ThemeHooks {
     fun install(classLoader: ClassLoader) {
         XLog.section("界面与主题定制")
         XLog.i(
-            "[界面] 配置快照：系统字体=${Prefs.systemFont}、" +
-                "隐藏 Stories=${Prefs.hideStories}（运行期实时读取，改设置无需重启）"
+            "[界面] 配置快照：系统字体=${Prefs.systemFont}、隐藏 Stories=${Prefs.hideStories}、" +
+                "强制平板=${Prefs.forceTablet}、关闭更新提示=${Prefs.disableUpdateCheck}" +
+                "（运行期实时读取，改设置无需重启）"
         )
 
         hookSystemTypeface(classLoader)
         hookHideStories(classLoader)
+        hookForceTablet(classLoader)
+        hookDisableUpdateCheck(classLoader)
     }
 
     // ------------------------------------------------------------------
@@ -170,6 +174,97 @@ object ThemeHooks {
                 "StoriesController 已接管 ${targets.size} 个查询方法：" +
                     targets.joinToString(", ") { it.name }
             )
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 强制平板布局
+    // ------------------------------------------------------------------
+
+    /**
+     * 强制平板布局（v5.8.0 新增）。
+     *
+     * hook `AndroidUtilities.isTabletForce()` 与 `isTabletInternal()`（源码 2948 / 2952）——
+     * Telegram 判断要不要走平板版界面（左右分栏）全看这两个。
+     *
+     * 两个都要接管：`isTabletInternal()` 内部会把结果缓存进静态字段，
+     * 只改前者的话首次调用之后就不再走原来那条路。
+     */
+    private fun hookForceTablet(classLoader: ClassLoader) {
+        val cls = XposedHelpers.findClassIfExists(CLS_ANDROID_UTILITIES, classLoader)
+        if (cls == null) {
+            XLog.e("[界面] 未找到 $CLS_ANDROID_UTILITIES")
+            return
+        }
+
+        val targets = HookFinder.match(
+            cls,
+            explicitNames = listOf("isTabletForce", "isTabletInternal"),
+            returnType = Boolean::class.javaPrimitiveType
+        )
+        if (targets.isEmpty()) {
+            XLog.w("[界面] 未定位到平板判定方法，强制平板布局不可用")
+            HookStatus.markUnavailable(Prefs.FORCE_TABLET)
+            return
+        }
+
+        safe("强制平板布局") {
+            for (method in targets) {
+                HookInstaller.hookMethodQuietly(method, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        guard("强制平板布局") {
+                            if (!Prefs.uiEnabled || !Prefs.forceTablet) return@guard
+                            HookStats.hit("ui.tablet")
+                            param.result = true
+                        }
+                    }
+                })
+            }
+            XLog.result("界面", "平板判定已接管 ${targets.size} 处：开启后强制平板布局")
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 关闭更新提示
+    // ------------------------------------------------------------------
+
+    /**
+     * 关闭更新提示（v5.8.0 新增）。
+     *
+     * hook `SharedConfig.isAppUpdateAvailable()`（源码 777 行）—— 返回 false 即可，
+     * 不碰任何更新逻辑本身，只是不再弹提示。
+     */
+    private fun hookDisableUpdateCheck(classLoader: ClassLoader) {
+        val cls = XposedHelpers.findClassIfExists(CLS_SHARED_CONFIG, classLoader)
+        if (cls == null) {
+            XLog.e("[界面] 未找到 $CLS_SHARED_CONFIG")
+            return
+        }
+
+        val targets = HookFinder.match(
+            cls,
+            explicitNames = listOf("isAppUpdateAvailable"),
+            returnType = Boolean::class.javaPrimitiveType
+        )
+        if (targets.isEmpty()) {
+            XLog.w("[界面] 未定位到 isAppUpdateAvailable，关闭更新提示不可用")
+            HookStatus.markUnavailable(Prefs.DISABLE_UPDATE_CHECK)
+            return
+        }
+
+        safe("关闭更新提示") {
+            for (method in targets) {
+                HookInstaller.hookMethodQuietly(method, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        guard("关闭更新提示") {
+                            if (!Prefs.uiEnabled || !Prefs.disableUpdateCheck) return@guard
+                            HookStats.hit("ui.updateCheck")
+                            param.result = false
+                        }
+                    }
+                })
+            }
+            XLog.result("界面", "isAppUpdateAvailable() 已接管：开启后不再提示更新")
         }
     }
 }

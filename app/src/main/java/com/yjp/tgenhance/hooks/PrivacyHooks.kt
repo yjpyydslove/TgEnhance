@@ -55,6 +55,7 @@ object PrivacyHooks {
 
     private const val CLS_MESSAGES_CONTROLLER = "org.telegram.messenger.MessagesController"
     private const val CLS_LOCALE_CONTROLLER = "org.telegram.messenger.LocaleController"
+    private const val CLS_PHONE_FORMAT = "org.telegram.PhoneFormat.PhoneFormat"
 
     /** 缓存 LocaleController 的 Class，取本地化文本时要用。 */
     @Volatile
@@ -65,8 +66,8 @@ object PrivacyHooks {
         XLog.i(
             "[隐私] 配置快照：防撤回=${Prefs.antiRecall}、" +
                 "隐藏输入=${Prefs.hideTyping}、不上报已读=${Prefs.blockReadReceipt}、" +
-                "隐藏在线=${Prefs.hideOnline}、隐藏对方在线=${Prefs.hidePeerOnline}" +
-                "（运行期实时读取，改设置无需重启）"
+                "隐藏在线=${Prefs.hideOnline}、隐藏对方在线=${Prefs.hidePeerOnline}、" +
+                "隐藏手机号=${Prefs.hidePhone}（运行期实时读取，改设置无需重启）"
         )
 
         hookHideTyping(classLoader)
@@ -74,6 +75,7 @@ object PrivacyHooks {
         hookBlockReadReceipt(classLoader)
         hookHideOnline(classLoader)
         hookHidePeerOnline(classLoader)
+        hookMaskPhone(classLoader)
     }
 
     // ------------------------------------------------------------------
@@ -396,4 +398,78 @@ object PrivacyHooks {
     } catch (t: Throwable) {
         null
     }
+
+    // ------------------------------------------------------------------
+    // 隐藏手机号
+    // ------------------------------------------------------------------
+
+    /**
+     * 隐藏手机号（v5.8.0 新增）。
+     *
+     * hook `PhoneFormat.format(String)`（源码 187 行）—— Telegram 所有地方显示的
+     * 手机号都经由它格式化，包括资料页和设置页。
+     *
+     * 处理方式是**遮罩**而不是抹掉：保留 `+` 前缀与末 4 位，中间用圆点替换。
+     * 这样自己仍然能一眼确认是哪个号，截图分享时也不会把完整号码带出去 ——
+     * 直接抹成空白反而会让人误以为号码丢了。
+     */
+    private fun hookMaskPhone(classLoader: ClassLoader) {
+        val cls = XposedHelpers.findClassIfExists(CLS_PHONE_FORMAT, classLoader)
+        if (cls == null) {
+            XLog.w("[隐私] 未找到 $CLS_PHONE_FORMAT，隐藏手机号不可用")
+            HookStatus.markUnavailable(Prefs.HIDE_PHONE)
+            return
+        }
+
+        val targets = HookFinder.match(
+            cls,
+            explicitNames = listOf("format"),
+            returnType = String::class.java,
+            paramCount = 1
+        )
+        if (targets.isEmpty()) {
+            XLog.w("[隐私] 未定位到 PhoneFormat.format(String)，隐藏手机号不可用")
+            HookStatus.markUnavailable(Prefs.HIDE_PHONE)
+            return
+        }
+
+        safe("隐藏手机号") {
+            for (method in targets) {
+                HookInstaller.hookMethodQuietly(method, object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        guard("隐藏手机号") {
+                            if (!Prefs.privacyEnabled || !Prefs.hidePhone) return@guard
+                            val formatted = param.result as? String ?: return@guard
+                            val masked = maskPhone(formatted)
+                            if (masked == formatted) return@guard
+                            HookStats.hit("privacy.phoneMask")
+                            param.result = masked
+                        }
+                    }
+                })
+            }
+            XLog.result("隐私", "PhoneFormat.format() 已接管：开启后手机号只显示末 4 位")
+        }
+    }
+
+    /** 保留 `+` 等非数字字符与末 4 位数字，其余数字替换为圆点。 */
+    private fun maskPhone(phone: String): String {
+        val digitCount = phone.count { it.isDigit() }
+        if (digitCount < 6) return phone
+
+        val keepFrom = digitCount - PHONE_TAIL_KEEP
+        val sb = StringBuilder(phone.length)
+        var seen = 0
+        for (ch in phone) {
+            if (!ch.isDigit()) {
+                sb.append(ch)
+            } else {
+                sb.append(if (seen >= keepFrom) ch else '•')
+                seen++
+            }
+        }
+        return sb.toString()
+    }
+
+    private const val PHONE_TAIL_KEEP = 4
 }

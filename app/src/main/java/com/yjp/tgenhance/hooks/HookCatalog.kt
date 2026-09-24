@@ -37,6 +37,8 @@ object HookCatalog {
         HookPoint("ui.typeface.seen", "字体加载请求"),
         HookPoint("ui.typeface.replaced", "字体替换"),
         HookPoint("ui.stories", "Stories 显示查询"),
+        HookPoint("ui.tablet", "平板布局判定"),
+        HookPoint("ui.updateCheck", "更新检查"),
 
         // 网络
         HookPoint("net.proxyProbe", "代理连通性探测"),
@@ -50,6 +52,7 @@ object HookCatalog {
         HookPoint("privacy.readReceipt.blocked", "拦截已读上报"),
         HookPoint("privacy.hideOnline", "隐藏在线状态"),
         HookPoint("privacy.peerOnline", "隐藏对方在线"),
+        HookPoint("privacy.phoneMask", "手机号遮罩"),
 
         // 反检测
         HookPoint("stealth.classLoad", "拒绝框架类查询"),

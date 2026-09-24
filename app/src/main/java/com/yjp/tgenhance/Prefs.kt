@@ -31,6 +31,8 @@ object Prefs {
     const val ENABLE_UI = "enable_ui"
     const val SYSTEM_FONT = "system_font"
     const val HIDE_STORIES = "hide_stories"
+    const val FORCE_TABLET = "force_tablet"
+    const val DISABLE_UPDATE_CHECK = "disable_update_check"
 
     // ---------------- 网络 ----------------
     const val ENABLE_NET = "enable_net"
@@ -45,6 +47,7 @@ object Prefs {
     const val BLOCK_READ_RECEIPT = "block_read_receipt"
     const val HIDE_ONLINE = "hide_online"
     const val HIDE_PEER_ONLINE = "hide_peer_online"
+    const val HIDE_PHONE = "hide_phone"
 
     // ---------------- 反检测 ----------------
     const val HIDE_XPOSED = "hide_xposed"
@@ -247,6 +250,8 @@ object Prefs {
 
     val systemFont: Boolean get() = hookBoolean(SYSTEM_FONT, false)
     val hideStories: Boolean get() = hookBoolean(HIDE_STORIES, false)
+    val forceTablet: Boolean get() = hookBoolean(FORCE_TABLET, false)
+    val disableUpdateCheck: Boolean get() = hookBoolean(DISABLE_UPDATE_CHECK, false)
 
     val blockProxyProbe: Boolean get() = hookBoolean(BLOCK_PROXY_PROBE, false)
     val blockAutoDownload: Boolean get() = hookBoolean(BLOCK_AUTO_DOWNLOAD, false)
@@ -257,6 +262,7 @@ object Prefs {
     val blockReadReceipt: Boolean get() = hookBoolean(BLOCK_READ_RECEIPT, false)
     val hideOnline: Boolean get() = hookBoolean(HIDE_ONLINE, false)
     val hidePeerOnline: Boolean get() = hookBoolean(HIDE_PEER_ONLINE, false)
+    val hidePhone: Boolean get() = hookBoolean(HIDE_PHONE, false)
 
     /** 反检测：隐藏模块与 Xposed 框架的痕迹。 */
     val hideXposed: Boolean get() = hookBoolean(HIDE_XPOSED, false)
