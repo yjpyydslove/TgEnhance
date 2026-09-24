@@ -10,6 +10,7 @@ enum class FeatureGroup(val title: String) {
     UI("界面与主题"),
     NETWORK("网络"),
     PRIVACY("隐私与本地增强"),
+    ADS("广告屏蔽"),
     STEALTH("反检测"),
     DIAG("诊断"),
 }
@@ -207,6 +208,29 @@ object Features {
             group = FeatureGroup.PRIVACY,
             title = "隐藏手机号",
             summary = "资料页里的手机号只保留末 4 位，其余数字用圆点遮住。"
+        ),
+
+        // ---------------- 广告屏蔽 ----------------
+        FeatureSpec(
+            key = Prefs.ENABLE_ADS,
+            group = FeatureGroup.ADS,
+            title = "启用广告屏蔽",
+            summary = "屏蔽 Telegram 在聊天列表与频道里插入的赞助消息。",
+            risk = RiskLevel.MEDIUM,
+            riskMessage = "这一项与本模块其他功能的性质不同，请先确认你了解它的影响：\n\n" +
+                "· 赞助消息是 Telegram 的收入来源。屏蔽它不会影响你的账号安全，\n" +
+                "  但确实会减少 Telegram 从你这里获得的广告收入。\n" +
+                "· 实现方式是让客户端**不再请求**赞助内容，因此顺带省一点流量。\n" +
+                "· 本模块只做这一项广告相关的事，不做 Premium 伪造、\n" +
+                "  也不绕过内容保存与转发限制。\n\n" +
+                "确认开启？",
+            isGroupRoot = true
+        ),
+        FeatureSpec(
+            key = Prefs.BLOCK_SPONSORED,
+            group = FeatureGroup.ADS,
+            title = "屏蔽赞助消息",
+            summary = "聊天列表与频道内的推广内容不再加载显示。"
         ),
 
         // ---------------- 反检测 ----------------

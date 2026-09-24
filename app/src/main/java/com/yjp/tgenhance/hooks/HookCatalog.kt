@@ -54,6 +54,9 @@ object HookCatalog {
         HookPoint("privacy.peerOnline", "隐藏对方在线"),
         HookPoint("privacy.phoneMask", "手机号遮罩"),
 
+        // 广告屏蔽
+        HookPoint("ads.sponsored.blocked", "屏蔽赞助消息"),
+
         // 反检测
         HookPoint("stealth.classLoad", "拒绝框架类查询"),
         HookPoint("stealth.stackTrace", "剔除框架堆栈帧"),

@@ -8,6 +8,7 @@ import com.yjp.tgenhance.diag.DiagBridge
 import com.yjp.tgenhance.diag.Diagnostics
 import com.yjp.tgenhance.diag.HookStats
 import com.yjp.tgenhance.hooks.AccountHooks
+import com.yjp.tgenhance.hooks.AdHooks
 import com.yjp.tgenhance.hooks.ClientProfileDetector
 import com.yjp.tgenhance.hooks.HookCatalog
 import com.yjp.tgenhance.hooks.HookInstaller
@@ -75,6 +76,7 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
             "网络" to XLog.timed("NetworkHooks") { NetworkHooks.install(lpparam.classLoader) },
             "隐私" to XLog.timed("PrivacyHooks") { PrivacyHooks.install(lpparam.classLoader) },
             "反检测" to XLog.timed("StealthHooks") { StealthHooks.install(lpparam.classLoader) },
+            "广告屏蔽" to XLog.timed("AdHooks") { AdHooks.install(lpparam.classLoader) },
             "配置热更新" to XLog.timed("PrefsReload") { installPrefsReloadHook(lpparam.classLoader) },
         )
 

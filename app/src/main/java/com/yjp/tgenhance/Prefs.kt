@@ -49,6 +49,10 @@ object Prefs {
     const val HIDE_PEER_ONLINE = "hide_peer_online"
     const val HIDE_PHONE = "hide_phone"
 
+    // ---------------- 广告屏蔽 ----------------
+    const val ENABLE_ADS = "enable_ads"
+    const val BLOCK_SPONSORED = "block_sponsored"
+
     // ---------------- 反检测 ----------------
     const val HIDE_XPOSED = "hide_xposed"
 
@@ -266,6 +270,9 @@ object Prefs {
 
     /** 反检测：隐藏模块与 Xposed 框架的痕迹。 */
     val hideXposed: Boolean get() = hookBoolean(HIDE_XPOSED, false)
+
+    val adsEnabled: Boolean get() = hookBoolean(ENABLE_ADS, false)
+    val blockSponsored: Boolean get() = hookBoolean(BLOCK_SPONSORED, false)
 
     /** hook 侧读取回传令牌；为空说明用户还没打开过设置界面。 */
     val diagToken: String get() = hookString(DIAG_TOKEN, "")

@@ -55,7 +55,7 @@ object Diagnostics {
         ),
         Target(
             "org.telegram.messenger.MessagesController",
-            listOf("deleteMessages", "sendTyping", "completeReadTask")
+            listOf("deleteMessages", "sendTyping", "completeReadTask", "getSponsoredMessages")
         ),
         Target(
             "org.telegram.messenger.LocaleController",
