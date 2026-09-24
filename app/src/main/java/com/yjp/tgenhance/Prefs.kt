@@ -238,6 +238,18 @@ object Prefs {
     /** hook 侧读取回传令牌；为空说明用户还没打开过设置界面。 */
     val diagToken: String get() = hookString(DIAG_TOKEN, "")
 
+    /**
+     * hook 端读取配置文件里现存的所有 key。
+     *
+     * 用于「配置一致性」自检：删掉某个功能后，老用户的配置文件里可能还留着它的 key。
+     * 残留本身不会造成故障，但会让「配置里到底有什么」变得难以解释。
+     */
+    fun hookKeySet(): Set<String> = try {
+        hookPrefs?.all?.keys ?: emptySet()
+    } catch (t: Throwable) {
+        emptySet()
+    }
+
     // ---------------- 配置导入 / 导出 ----------------
 
     /**

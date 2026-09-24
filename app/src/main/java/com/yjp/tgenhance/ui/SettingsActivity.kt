@@ -588,7 +588,7 @@ class SettingsActivity : Activity() {
             sb.append("  · ").append(parts[0]).append('\n')
             val suggestions = parts.getOrNull(1)
             if (!suggestions.isNullOrBlank()) {
-                sb.append("      候选新名字：").append(suggestions).append('\n')
+                sb.append("      相关项：").append(suggestions).append('\n')
             }
         }
         return sb.toString().trimEnd()
@@ -775,8 +775,13 @@ class SettingsActivity : Activity() {
             .setTitle("重置所有设置")
             .setMessage("将把本模块的全部配置恢复为默认值。\n\n只影响本模块，不触碰 Telegram 自身数据。")
             .setPositiveButton("重置") { _, _ ->
+                // 保留回传令牌：重置功能开关不该顺带让诊断回传失效
+                val token = prefs.getString(Prefs.DIAG_TOKEN, null)
                 prefs.edit().clear().apply()
-                Toast.makeText(this, "已重置", Toast.LENGTH_SHORT).show()
+                if (!token.isNullOrEmpty()) {
+                    prefs.edit().putString(Prefs.DIAG_TOKEN, token).apply()
+                }
+                toast("已重置")
                 recreate()
             }
             .setNegativeButton("取消", null)

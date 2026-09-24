@@ -1,6 +1,8 @@
 package com.yjp.tgenhance.diag
 
+import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.XLog
+import com.yjp.tgenhance.core.Features
 import de.robv.android.xposed.XposedHelpers
 
 /**
@@ -82,6 +84,7 @@ object Diagnostics {
         for (target in TARGETS) {
             items += check(classLoader, target)
         }
+        configConsistency()?.let { items += it }
         lastReport = items
 
         val okCount = items.count { it.ok }
@@ -101,6 +104,32 @@ object Diagnostics {
             }
         }
         XLog.section("诊断报告结束")
+    }
+
+    /**
+     * 配置一致性检查：找出配置文件里存在、但已无对应功能的 key。
+     *
+     * 这类残留来自「功能删了、配置还在」，不会造成故障，
+     * 但会让「配置里有什么」变得难以解释 —— 排查问题时先花时间猜这些 key 是干嘛的。
+     *
+     * 全部用户的配置文件都还没初始化时返回 null，不占一行自检结果。
+     */
+    private fun configConsistency(): CheckItem? {
+        val existing = Prefs.hookKeySet()
+        if (existing.isEmpty()) return null
+
+        val known = Features.ALL.map { it.key }.toMutableSet().apply {
+            add(Prefs.MAX_ACCOUNTS)
+            add(Prefs.DIAG_TOKEN)
+        }
+        val unknown = (existing - known).sorted()
+
+        return CheckItem(
+            owner = "配置",
+            member = "key 一致性（共 ${existing.size} 项）",
+            ok = unknown.isEmpty(),
+            suggestions = unknown.take(8)
+        )
     }
 
     /**
