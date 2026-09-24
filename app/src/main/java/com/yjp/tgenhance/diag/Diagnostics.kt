@@ -3,6 +3,7 @@ package com.yjp.tgenhance.diag
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.XLog
 import com.yjp.tgenhance.core.Features
+import com.yjp.tgenhance.hooks.ConflictWatch
 import de.robv.android.xposed.XposedHelpers
 
 /**
@@ -85,6 +86,7 @@ object Diagnostics {
             items += check(classLoader, target)
         }
         configConsistency()?.let { items += it }
+        conflictCheck()?.let { items += it }
         lastReport = items
 
         val okCount = items.count { it.ok }
@@ -129,6 +131,28 @@ object Diagnostics {
             member = "key 一致性（共 ${existing.size} 项）",
             ok = unknown.isEmpty(),
             suggestions = unknown.take(8)
+        )
+    }
+
+    /**
+     * Hook 冲突检测：判断目标方法是否已被其他模块占用。
+     *
+     * 两个模块 hook 同一方法时的表现极难排查 —— 可能互相覆盖导致其中一个静默失效，
+     * 也可能因为优先级不同出现「有时生效有时不生效」。点名列出来，
+     * 至少让用户知道该去关哪个模块，而不是对着「功能没反应」干瞪眼。
+     *
+     * 没有检测到冲突时返回 null，不占一行自检结果。
+     */
+    private fun conflictCheck(): CheckItem? {
+        val list = ConflictWatch.list()
+        if (list.isEmpty()) return null
+
+        XLog.w("[诊断] 检测到 ${list.size} 个 Hook 点已被其他模块占用：${list.joinToString(", ")}")
+        return CheckItem(
+            owner = "冲突检测",
+            member = "被其他模块占用的 Hook 点（${list.size} 个）",
+            ok = false,
+            suggestions = list.take(8)
         )
     }
 

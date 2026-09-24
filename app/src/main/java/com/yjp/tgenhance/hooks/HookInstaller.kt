@@ -3,6 +3,7 @@ package com.yjp.tgenhance.hooks
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import java.lang.reflect.Method
+import java.lang.reflect.Modifier
 
 /**
  * Hook 安装的统一入口。
@@ -39,9 +40,18 @@ object HookInstaller {
      * 个别重载挂不上不该拖垮整组 Hook。
      */
     fun hookMethodQuietly(method: Method, callback: XC_MethodHook): Boolean = try {
+        // 挂载前若已是 native，说明已经被别的模块 hook 过（正常 Java 方法不该带这个标志）
+        if (isAlreadyHooked(method)) ConflictWatch.note(method)
+
         StealthHooks.markHooked(method)
         XposedBridge.hookMethod(method, callback)
         true
+    } catch (t: Throwable) {
+        false
+    }
+
+    private fun isAlreadyHooked(method: Method): Boolean = try {
+        Modifier.isNative(method.modifiers)
     } catch (t: Throwable) {
         false
     }
