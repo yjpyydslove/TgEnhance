@@ -5,6 +5,7 @@ import com.yjp.tgenhance.XLog
 import com.yjp.tgenhance.core.Features
 import com.yjp.tgenhance.hooks.ClientProfileDetector
 import com.yjp.tgenhance.hooks.ConflictWatch
+import com.yjp.tgenhance.hooks.HookFinder
 import com.yjp.tgenhance.hooks.HookStatus
 import de.robv.android.xposed.XposedHelpers
 
@@ -78,6 +79,10 @@ object Diagnostics {
             listOf("checkProxy")
         ),
         Target(
+            "org.telegram.messenger.DownloadController",
+            listOf("canDownloadMedia")
+        ),
+        Target(
             "org.telegram.ui.LaunchActivity",
             listOf("onResume", "onPause")
         ),
@@ -131,6 +136,7 @@ object Diagnostics {
         conflictCheck()?.let { items += it }
         availabilityCheck()?.let { items += it }
         installFailureCheck()?.let { items += it }
+        fuzzyMatchCheck()?.let { items += it }
         items += frameworkCheck()
         lastReport = items
 
@@ -241,6 +247,26 @@ object Diagnostics {
             member = "当前客户端不支持的功能（${keys.size} 项，开了也不会生效）",
             ok = false,
             suggestions = titles.take(8)
+        )
+    }
+
+    /**
+     * 特征兜底命中检查（v6.0.0）。
+     *
+     * 正常情况下应该一条都没有 —— 出现了就说明官方改了那个方法的名字，
+     * 模块是靠「返回类型 + 名字特征」侥幸接住的。这种情况必须让用户看到：
+     * 这次接住了，下次改动幅度再大一点就会彻底失效。
+     */
+    private fun fuzzyMatchCheck(): CheckItem? {
+        val hits = HookFinder.fuzzyMatched()
+        if (hits.isEmpty()) return null
+
+        XLog.w("[诊断] 以下 Hook 点靠特征兜底命中（官方改过名）：${hits.joinToString("、")}")
+        return CheckItem(
+            owner = "适配",
+            member = "${hits.size} 个 Hook 点靠特征兜底命中（方法名已变）",
+            ok = false,
+            suggestions = hits.take(8)
         )
     }
 

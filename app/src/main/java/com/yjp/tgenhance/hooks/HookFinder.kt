@@ -2,6 +2,7 @@ package com.yjp.tgenhance.hooks
 
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
+import java.util.Collections
 import java.util.Locale
 
 /**
@@ -87,7 +88,31 @@ object HookFinder {
             nameContains = nameContains,
             paramCount = paramCount
         )
+
+        val exactNames = exact.mapTo(HashSet()) { it.name.lowercase(Locale.ROOT) }
+        for (method in fuzzy) {
+            // 只在「精确名没命中、靠特征兜底才找到」时记账
+            if (method.name.lowercase(Locale.ROOT) !in exactNames) {
+                fuzzyHits.add(cls.simpleName + "." + method.name)
+            }
+        }
+
         return (exact + fuzzy).distinctBy { simpleSignature(it) }
+    }
+
+    /**
+     * 靠特征兜底（而非精确方法名）命中的 Hook 点。
+     *
+     * 这是个很有用的适配质量指标：正常情况下应该一条都没有 ——
+     * 一旦出现，说明官方改了这个方法的名字，而模块是靠特征匹配侥幸接住的。
+     * 这种情况必须知道，否则下次改动幅度再大一点就会彻底失效。
+     */
+    private val fuzzyHits: MutableSet<String> = Collections.synchronizedSet(HashSet())
+
+    fun fuzzyMatched(): List<String> = try {
+        fuzzyHits.sorted()
+    } catch (t: Throwable) {
+        emptyList()
     }
 
     /** 供日志阅读的短签名，不输出修饰符与包名。 */
