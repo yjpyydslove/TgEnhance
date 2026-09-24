@@ -118,7 +118,7 @@ object AccountHooks {
             return
         }
         safe("getMaxAccountCount") {
-            XposedBridge.hookAllMethods(cls, "getMaxAccountCount", object : XC_MethodHook() {
+            HookInstaller.hookAllByName(cls, "getMaxAccountCount", object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     if (param.args.isNotEmpty()) return
                     HookStats.hit("account.maxCount")
@@ -240,7 +240,7 @@ object AccountHooks {
 
         // getActivatedAccountsCount(): for (a = 0; a < MAX_ACCOUNT_COUNT; a++) —— 上界被内联为常量
         safe("getActivatedAccountsCount") {
-            XposedBridge.hookAllMethods(userConfig, "getActivatedAccountsCount", object : XC_MethodReplacement() {
+            HookInstaller.hookAllByName(userConfig, "getActivatedAccountsCount", object : XC_MethodReplacement() {
                 override fun replaceHookedMethod(param: MethodHookParam): Any? = try {
                     if (!Prefs.accountEnabled) invokeOriginal(param) ?: 0
                     else countActivated(accountInstance)
@@ -254,7 +254,7 @@ object AccountHooks {
 
         // hasPremiumOnAccounts(): 同样被常量写死，会导致高级账号状态判断不全
         safe("hasPremiumOnAccounts") {
-            XposedBridge.hookAllMethods(userConfig, "hasPremiumOnAccounts", object : XC_MethodReplacement() {
+            HookInstaller.hookAllByName(userConfig, "hasPremiumOnAccounts", object : XC_MethodReplacement() {
                 override fun replaceHookedMethod(param: MethodHookParam): Any? = try {
                     if (!Prefs.accountEnabled) {
                         invokeOriginal(param) ?: false

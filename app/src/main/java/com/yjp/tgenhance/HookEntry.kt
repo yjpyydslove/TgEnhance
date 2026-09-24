@@ -8,6 +8,7 @@ import com.yjp.tgenhance.diag.DiagBridge
 import com.yjp.tgenhance.diag.Diagnostics
 import com.yjp.tgenhance.diag.HookStats
 import com.yjp.tgenhance.hooks.AccountHooks
+import com.yjp.tgenhance.hooks.HookInstaller
 import com.yjp.tgenhance.hooks.NetworkHooks
 import com.yjp.tgenhance.hooks.PrivacyHooks
 import com.yjp.tgenhance.hooks.StealthHooks
@@ -107,7 +108,7 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
             return
         }
 
-        XposedBridge.hookAllMethods(target, "onResume", object : XC_MethodHook() {
+        HookInstaller.hookAllByName(target, "onResume", object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
                 guard("配置热更新") {
                     HookStats.hit("prefs.reload")
@@ -117,7 +118,7 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
             }
         })
 
-        XposedBridge.hookAllMethods(target, "onPause", object : XC_MethodHook() {
+        HookInstaller.hookAllByName(target, "onPause", object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
                 guard("诊断回传") {
                     DiagBridge.broadcast()

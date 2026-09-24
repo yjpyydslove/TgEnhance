@@ -10,6 +10,9 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodHook.MethodHookParam
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
+import java.lang.reflect.Method
+import java.lang.reflect.Modifier
+import java.util.Collections
 
 /**
  * 反检测（模块隐身）。
@@ -56,7 +59,34 @@ object StealthHooks {
         hookStackTrace(classLoader, "java.lang.Throwable")
         hookStackTrace(classLoader, "java.lang.Thread")
         hookPackageQuery(classLoader)
+        hookMethodModifiers(classLoader)
     }
+
+    // ------------------------------------------------------------------
+    // 0. 被 hook 方法的登记（供第 4 项反检测使用）
+    // ------------------------------------------------------------------
+
+    /** 被本模块 hook 过的方法签名：`类名#方法名(参数类型)`。 */
+    private val hookedSignatures: MutableSet<String> =
+        Collections.synchronizedSet(HashSet<String>())
+
+    /**
+     * 登记一个被 hook 的方法。
+     *
+     * 必须由 [HookInstaller] 在 `XposedBridge.hookMethod` **之前**调用 ——
+     * 那时 `parameterTypes` 还是正常的，方法也还没被替换成 native stub。
+     */
+    fun markHooked(method: Method) {
+        try {
+            hookedSignatures.add(signatureOf(method))
+        } catch (t: Throwable) {
+            // 登记失败只影响隐身，不影响 Hook 本身
+        }
+    }
+
+    private fun signatureOf(method: Method): String =
+        method.declaringClass.name + "#" + method.name +
+            "(" + method.parameterTypes.joinToString(",") { it.name } + ")"
 
     // ------------------------------------------------------------------
     // 1. 类加载隐身
@@ -70,7 +100,7 @@ object StealthHooks {
         }
 
         safe("类加载隐身") {
-            XposedBridge.hookAllMethods(cls, "loadClass", object : XC_MethodHook() {
+            HookInstaller.hookAllByName(cls, "loadClass", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     if (!Prefs.hideXposed) return
                     val name = param.args.getOrNull(0) as? String ?: return
@@ -92,7 +122,7 @@ object StealthHooks {
         val cls = XposedHelpers.findClassIfExists(className, classLoader) ?: return
 
         safe("堆栈隐身·$className") {
-            XposedBridge.hookAllMethods(cls, "getStackTrace", object : XC_MethodHook() {
+            HookInstaller.hookAllByName(cls, "getStackTrace", object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     guard("堆栈隐身") {
                         if (!Prefs.hideXposed) return@guard
@@ -127,7 +157,7 @@ object StealthHooks {
         }
 
         safe("包名隐身") {
-            XposedBridge.hookAllMethods(cls, "getPackageInfo", object : XC_MethodHook() {
+            HookInstaller.hookAllByName(cls, "getPackageInfo", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     if (!Prefs.hideXposed) return
                     val pkg = param.args.getOrNull(0) as? String ?: return
@@ -138,6 +168,48 @@ object StealthHooks {
                 }
             })
             XLog.result("反检测", "getPackageInfo() 已接管：模块自身包名的查询将被拒绝")
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 4. 方法修饰符隐身
+    // ------------------------------------------------------------------
+
+    /**
+     * 抹掉被 hook 方法的 native 标志（v4.1.0）。
+     *
+     * Xposed 挂载一个方法时会把 ART 里的实现替换成 native stub，
+     * 于是 `Modifier.isNative(m.getModifiers())` 从 false 变成 true。
+     * 遍历目标类的方法、找出「明明是 Java 方法却带 native 标志」的那些，
+     * 是目前最可靠的一种 Xposed 检测手法。
+     *
+     * 只对**本模块 hook 过的方法**修正（名单由 [markHooked] 维护），
+     * 不做全量过滤 —— 全量过滤会把 Telegram 自己真正的 native 方法
+     * （`ConnectionsManager.native_*` 之类）也伪装成 Java 方法，
+     * 反而制造出新的异常特征。
+     */
+    private fun hookMethodModifiers(classLoader: ClassLoader) {
+        val cls = XposedHelpers.findClassIfExists("java.lang.reflect.Method", classLoader)
+        if (cls == null) {
+            XLog.e("[反检测] 未找到 java.lang.reflect.Method")
+            return
+        }
+
+        safe("方法修饰符隐身") {
+            HookInstaller.hookAllByName(cls, "getModifiers", object : XC_MethodHook() {
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    guard("修饰符隐身") {
+                        if (!Prefs.hideXposed) return@guard
+                        val method = param.thisObject as? Method ?: return@guard
+                        if (!hookedSignatures.contains(signatureOf(method))) return@guard
+                        val modifiers = param.result as? Int ?: return@guard
+                        if (modifiers and Modifier.NATIVE == 0) return@guard
+                        HookStats.hit("stealth.modifiers")
+                        param.result = modifiers and Modifier.NATIVE.inv()
+                    }
+                }
+            })
+            XLog.result("反检测", "Method.getModifiers() 已接管：被 hook 的方法不再暴露 native 标志")
         }
     }
 

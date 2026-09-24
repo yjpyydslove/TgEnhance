@@ -81,7 +81,7 @@ object PrivacyHooks {
         }
 
         safe("隐藏输入状态") {
-            XposedBridge.hookAllMethods(cls, "sendTyping", object : XC_MethodReplacement() {
+            HookInstaller.hookAllByName(cls, "sendTyping", object : XC_MethodReplacement() {
                 override fun replaceHookedMethod(param: MethodHookParam): Any? {
                     if (!Prefs.privacyEnabled || !Prefs.hideTyping) return invokeOriginal(param) ?: false
                     return try {
@@ -109,7 +109,7 @@ object PrivacyHooks {
         }
 
         safe("防撤回") {
-            XposedBridge.hookAllMethods(cls, "deleteMessages", object : XC_MethodHook() {
+            HookInstaller.hookAllByName(cls, "deleteMessages", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     guard("防撤回") {
                         // 只要 deleteMessages 被调用就计数，用于判断 hook 是否还挂在活跃路径上
@@ -189,7 +189,7 @@ object PrivacyHooks {
         }
 
         safe("不上报已读回执") {
-            XposedBridge.hookAllMethods(cls, "completeReadTask", object : XC_MethodReplacement() {
+            HookInstaller.hookAllByName(cls, "completeReadTask", object : XC_MethodReplacement() {
                 override fun replaceHookedMethod(param: MethodHookParam): Any? {
                     if (!Prefs.privacyEnabled || !Prefs.blockReadReceipt) return invokeOriginal(param)
                     return try {
@@ -249,7 +249,7 @@ object PrivacyHooks {
         }
 
         safe("隐藏在线状态") {
-            XposedBridge.hookAllMethods(cls, "updateTimerProc", object : XC_MethodHook() {
+            HookInstaller.hookAllByName(cls, "updateTimerProc", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     if (!Prefs.privacyEnabled || !Prefs.hideOnline) return
                     try {

@@ -51,7 +51,7 @@ object NetworkHooks {
         }
 
         safe("代理探测防护") {
-            XposedBridge.hookAllMethods(cls, "checkProxy", object : XC_MethodHook() {
+            HookInstaller.hookAllByName(cls, "checkProxy", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     HookStats.hit("net.proxyProbe")
                     if (!Prefs.netEnabled || !Prefs.blockProxyProbe) return
