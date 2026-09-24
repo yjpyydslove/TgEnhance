@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- LSPosed 作用域默认勾选建议（仅作提示，用户可在模块页面自行增删） -->
+    <string-array name="xposed_scope">
+        <item>org.telegram.messenger</item>
+        <item>org.telegram.messenger.web</item>
+        <item>org.telegram.plus</item>
+        <item>tw.nekogram.android</item>
+        <item>com.exteragram.messenger</item>
+    </string-array>
+</resources>

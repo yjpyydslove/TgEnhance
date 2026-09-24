@@ -1,0 +1,81 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # 注意：不要用 android-actions/setup-android@v3，
+      # 其默认安装的 "tools" 包已从 SDK 仓库下线，会直接失败。
+      # 这里改用 runner 预装的 cmdline-tools。
+      - name: 安装 Android SDK 组件
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}"
+          SDKMGR="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMGR" ] || SDKMGR="$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager | head -1)"
+          echo "使用 sdkmanager: $SDKMGR"
+          yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          "$SDKMGR" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          echo "sdk.dir=$SDK" > local.properties
+          echo "Android SDK 就绪: $SDK"
+
+      - name: 配置 Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: 编译 Release APK
+        run: gradle assembleRelease --no-daemon --stacktrace
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx3072m -Dfile.encoding=UTF-8"
+
+      - name: 整理产物
+        run: |
+          set -e
+          mkdir -p out
+          VER="$(grep -E '^VERSION_NAME=' gradle.properties | head -1 | cut -d= -f2 | tr -d '[:space:]')"
+          [ -n "$VER" ] || VER="dev"
+          APK="$(find app/build/outputs/apk/release -name '*.apk' -print -quit)"
+          if [ -z "$APK" ]; then
+            echo "::error::未找到 Release APK"
+            find app/build/outputs -name '*.apk' || true
+            exit 1
+          fi
+          echo "找到 APK: $APK"
+          cp "$APK" "out/TgEnhance-${VER}.apk"
+          ls -la out/
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: TgEnhance-apk
+          path: out/*.apk
+          if-no-files-found: error
+
+      - name: 发布到 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.apk
+          generate_release_notes: true
+          draft: false

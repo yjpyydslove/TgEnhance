@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TG 增强</string>
+    <string name="module_description">Telegram 客户端增强：多账号上限提升、界面与字体定制、网络连接调优。改完设置后需重启 Telegram 生效。</string>
+
+    <string name="section_account">多账号</string>
+    <string name="section_ui">界面与主题</string>
+    <string name="section_network">网络</string>
+    <string name="section_debug">诊断</string>
+
+    <string name="restart_tip">修改设置后，请从最近任务中划掉 Telegram 再重新打开（无需重启手机）。</string>
+</resources>
