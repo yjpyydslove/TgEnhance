@@ -59,13 +59,24 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         // 各分组独立挂载：任何一组出错都不影响其余组。
         // 用 timed 而非 safe，把每一步耗时打到日志里 —— 这段代码在
         // handleLoadPackage 里同步执行，耗时直接算进 Telegram 的启动时间。
+        // 返回值同时用来判断成败：install 正常返回 Unit，抛异常则 timed 返回 null。
         val startedAt = SystemClock.elapsedRealtime()
-        XLog.timed("AccountHooks") { AccountHooks.install(lpparam.classLoader) }
-        XLog.timed("ThemeHooks") { ThemeHooks.install(lpparam.classLoader) }
-        XLog.timed("NetworkHooks") { NetworkHooks.install(lpparam.classLoader) }
-        XLog.timed("PrivacyHooks") { PrivacyHooks.install(lpparam.classLoader) }
-        XLog.timed("StealthHooks") { StealthHooks.install(lpparam.classLoader) }
-        XLog.timed("PrefsReload") { installPrefsReloadHook(lpparam.classLoader) }
+        val installResults = linkedMapOf(
+            "多账号" to XLog.timed("AccountHooks") { AccountHooks.install(lpparam.classLoader) },
+            "界面" to XLog.timed("ThemeHooks") { ThemeHooks.install(lpparam.classLoader) },
+            "网络" to XLog.timed("NetworkHooks") { NetworkHooks.install(lpparam.classLoader) },
+            "隐私" to XLog.timed("PrivacyHooks") { PrivacyHooks.install(lpparam.classLoader) },
+            "反检测" to XLog.timed("StealthHooks") { StealthHooks.install(lpparam.classLoader) },
+            "配置热更新" to XLog.timed("PrefsReload") { installPrefsReloadHook(lpparam.classLoader) },
+        )
+
+        val failed = installResults.filterValues { it == null }.keys
+        if (failed.isEmpty()) {
+            XLog.result("挂载", "全部 ${installResults.size} 组挂载成功")
+        } else {
+            XLog.e("[挂载] ${failed.size}/${installResults.size} 组失败：${failed.joinToString("、")}")
+            XLog.e("[挂载] 多数情况是 Telegram 版本变动或作用域未勾选，请连同版本号一起反馈")
+        }
 
         var diagCost = 0L
         if (Prefs.diagEnabled) {
