@@ -1,13 +1,16 @@
 package com.yjp.tgenhance
 
 import android.app.AndroidAppHelper
+import android.os.Handler
 import com.yjp.tgenhance.diag.Diagnostics
+import com.yjp.tgenhance.diag.HookStats
 import com.yjp.tgenhance.hooks.AccountHooks
 import com.yjp.tgenhance.hooks.NetworkHooks
 import com.yjp.tgenhance.hooks.PrivacyHooks
 import com.yjp.tgenhance.hooks.ThemeHooks
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.IXposedHookZygoteInit
+import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 
@@ -43,7 +46,42 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
             XLog.safe("Diagnostics") { Diagnostics.run(lpparam.classLoader) }
         }
 
+        // 挂载完成后安排一次触发统计输出：用于验证 Hook 是否**真的被调用**，
+        // 而不仅仅是「挂上了」
+        XLog.safe("HookStats") { scheduleStatsReport(lpparam.classLoader) }
+
         XLog.i("全部模块挂载流程结束")
+    }
+
+    /**
+     * 启动一段时间后输出 Hook 触发统计。
+     *
+     * 时机选在 `Application.onCreate` 之后延迟 [HookStats.REPORT_DELAY_MS]：
+     * `handleLoadPackage` 阶段主线程 Looper 尚未就绪，无法直接 postDelayed；
+     * 而 Application.onCreate 是 Telegram 进程内最早的稳定时机。
+     */
+    private fun scheduleStatsReport(classLoader: ClassLoader) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.app.Application", classLoader, "onCreate",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val app = param.thisObject as? android.app.Application ?: return
+                        try {
+                            Handler(app.mainLooper).postDelayed(
+                                { HookStats.report() },
+                                HookStats.REPORT_DELAY_MS
+                            )
+                            XLog.i("[统计] 已安排 ${HookStats.REPORT_DELAY_MS / 1000} 秒后输出 Hook 触发统计")
+                        } catch (t: Throwable) {
+                            XLog.e("[统计] 注册延迟任务失败", t)
+                        }
+                    }
+                }
+            )
+        } catch (t: Throwable) {
+            XLog.e("[统计] Hook Application.onCreate 失败", t)
+        }
     }
 
     /**

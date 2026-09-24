@@ -3,6 +3,7 @@ package com.yjp.tgenhance.hooks
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.XLog
 import com.yjp.tgenhance.XLog.safe
+import com.yjp.tgenhance.diag.HookStats
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodHook.MethodHookParam
 import de.robv.android.xposed.XposedBridge
@@ -51,6 +52,7 @@ object NetworkHooks {
         safe("代理探测防护") {
             XposedBridge.hookAllMethods(cls, "checkProxy", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
+                    HookStats.hit("net.proxyProbe")
                     param.result = 0L
                     XLog.result("网络", "已阻止一次代理探测（真实 IP 不外泄）")
                 }

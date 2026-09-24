@@ -3,6 +3,7 @@ package com.yjp.tgenhance.hooks
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.XLog
 import com.yjp.tgenhance.XLog.safe
+import com.yjp.tgenhance.diag.HookStats
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodHook.MethodHookParam
 import de.robv.android.xposed.XC_MethodReplacement
@@ -117,7 +118,9 @@ object AccountHooks {
         safe("getMaxAccountCount") {
             XposedBridge.hookAllMethods(cls, "getMaxAccountCount", object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
-                    if (param.args.isEmpty()) param.result = max
+                    if (param.args.isNotEmpty()) return
+                    HookStats.hit("account.maxCount")
+                    param.result = max
                 }
             })
             XLog.result("多账号", "UserConfig.getMaxAccountCount() 恒定返回 $max（原始：免费 3 / 会员 5）")
@@ -212,6 +215,7 @@ object AccountHooks {
                 val expanded = java.lang.reflect.Array.newInstance(current.javaClass.componentType!!, needed)
                 System.arraycopy(current, 0, expanded, 0, current.size)
                 field.set(null, expanded)
+                HookStats.hit("account.expand")
                 XLog.result("扩容", "${cls.simpleName}.${field.name}: ${current.size} -> $needed (触发 index=$index)")
             } catch (t: Throwable) {
                 XLog.e("[多账号] 扩容 ${cls.simpleName}.${field.name} 失败", t)

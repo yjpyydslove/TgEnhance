@@ -4,6 +4,7 @@ import android.graphics.Typeface
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.XLog
 import com.yjp.tgenhance.XLog.safe
+import com.yjp.tgenhance.diag.HookStats
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XC_MethodHook.MethodHookParam
 import de.robv.android.xposed.XposedBridge
@@ -79,7 +80,9 @@ object ThemeHooks {
             XposedBridge.hookAllMethods(cls, "getTypeface", object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     val assetPath = param.args.getOrNull(0) as? String ?: return
+                    HookStats.hit("ui.typeface.seen")
                     val mapped = mapToSystemTypeface(assetPath) ?: return
+                    HookStats.hit("ui.typeface.replaced")
                     param.result = mapped
                 }
             })
@@ -123,6 +126,7 @@ object ThemeHooks {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         val m = param.method as? Method ?: return
                         if (m.returnType == Boolean::class.javaPrimitiveType) {
+                            HookStats.hit("ui.stories")
                             param.result = false
                         }
                     }
