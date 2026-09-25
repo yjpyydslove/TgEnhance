@@ -257,16 +257,42 @@ public final static int MAX_ACCOUNT_COUNT = 4;
 
 ### Hook 点依据
 
-所有 Hook 点均取自 Telegram 官方源码（`DrKLO/Telegram`），而非猜测：
+所有 Hook 点均取自 Telegram 官方源码（`DrKLO/Telegram`），而非猜测。
+下表是**逐条核对过**的结果（v N1.14）：把项目里每个 `HookFinder.match`
+的过滤条件，与源码里的真实签名比对了一遍。
 
-| Hook 点 | 源码位置 |
-|---|---|
-| `UserConfig.getMaxAccountCount()` | `UserConfig.java` |
-| 各 `getInstance(int)` / `Instance[]` | `AccountInstance.java` 等 |
-| `AndroidUtilities.getTypeface(String)` | `AndroidUtilities.java:2393` |
-| `MessagesController.sendTyping(...)` | `MessagesController.java:11381` |
-| `MessagesController.deleteMessages(...)` | `MessagesController.java:9307+` |
-| `ConnectionsManager.checkProxy(...)` | `ConnectionsManager.java:739` |
+| Hook 点 | 源码位置 | 过滤条件 | 核对 |
+|---|---|---|---|
+| `UserConfig.getMaxAccountCount()` | `UserConfig.java:124` | 返回 `int` | ✅ |
+| `UserConfig.getActivatedAccountsCount()` | `UserConfig.java:101` | 返回 `int` | ✅ |
+| `UserConfig.hasPremiumOnAccounts()` | `UserConfig.java:115` | 返回 `boolean` | ✅ |
+| 各 `getInstance(int)` / `Instance[]` | `AccountInstance.java` 等 | — | — |
+| `MessagesController.sendTyping(...)` | `MessagesController.java:11381 / 11385` | 返回 `boolean`，参数 ≥3 | ✅ |
+| `MessagesController.deleteMessages(...)` | `MessagesController.java:9307+`（4 个重载） | 参数 ≥2 | ✅ |
+| `MessagesController.completeReadTask(ReadTask)` | `MessagesController.java:14559`（**private**） | — | ✅ |
+| `MessagesController.updateTimerProc()` | `MessagesController.java:10520` | — | ✅ |
+| `MessagesController.getSponsoredMessages(long)` | `MessagesController.java:21612` | — | ✅ |
+| `ConnectionsManager.checkProxy(...)` | `ConnectionsManager.java:739` | — | ✅ |
+| `AndroidUtilities.getTypeface(String)` | `AndroidUtilities.java:2393` | — | ✅ |
+| `AndroidUtilities.isTabletForce()` / `isTabletInternal()` | `AndroidUtilities.java:2948 / 2952` | 返回 `boolean` | ✅ |
+| `SharedConfig.isAutoplayVideo()` / `isAutoplayGifs()` | `SharedConfig.java:740 / 744` | 返回 `boolean` | ✅ |
+| `SharedConfig.isAppUpdateAvailable()` | `SharedConfig.java:777` | 返回 `boolean` | ✅ |
+| `DownloadController.canDownloadMedia(...)` | `DownloadController.java:609 / 627` | — | ✅ |
+| `StoriesController.has*()` | `StoriesController.java:254 / 287 / 1076 / 1342 / 1754` | 返回 `boolean` | ✅ |
+| `LocaleController.formatUserStatus(...)` | `LocaleController.java:2888` | — | — |
+| `PhoneFormat.format(String)` | `PhoneFormat.java:187` | 返回 `String`，1 参 | ✅ |
+
+**两处值得单独记下的：**
+
+- `ConnectionsManager.checkProxy(...)` 返回 **`long`**，所以回调里写的是
+  `param.result = 0L`。若写成 `0`（`Int`）会抛 `ClassCastException` ——
+  这类错误只在真机上炸，静态检查看不出来。
+- `MessagesController.completeReadTask(ReadTask)` 是 **private** 方法。
+  项目的 `hookAllByName` 按名字挂载所有重载、**不看可见性**，所以能挂上；
+  但按「public 方法」去找会一直找不到它。
+
+**没打勾的两行**是这次没逐条核的（`AccountInstance` 那组是数组扩容、
+`formatUserStatus` 项目本身没加过滤条件），它们的存在性已由挂载期自检覆盖。
 
 ---
 
@@ -1169,6 +1195,38 @@ public static UItem of(int id, int iconColorTop, int iconColorBottom,
 正好与设置页第一项「账号」同色。
 
 都取不到也不影响使用：条目照常显示、照常可点，只是没有图标块。
+
+---
+
+### N1.14 —— Hook 点签名逐条核对
+
+这是最后一大类没系统验过的风险：**项目里的过滤条件，与 Telegram 源码里的
+真实签名到底对不对得上。**
+
+为什么要专门核：`HookFinder` 定位 Hook 点时会带 `returnType`、`paramCount`
+这类过滤条件。条件与真实签名不符时，方法名还在、自检也会绿，
+但 `HookFinder` **永远找不到它** —— N1.9 修的就是这个矛盾的另一半。
+
+**做法**：把源码拉下来逐条比对 16 个 Hook 点。
+`MessagesController` 有 1.26 MB，直连下载三次都断流，
+改用 GitHub 的 **blob 接口**取 base64 才拿到完整文件。
+
+**结论：全部一致。** 这一轮在技术上「空手而归」，但值得 ——
+它是唯一一类**静态检查查不出、只有实机才会暴露**的风险，现在排除了。
+
+核对中有两处值得单独记下：
+
+**1. `checkProxy` 返回 `long`。** 项目里写的是 `param.result = 0L`，正好匹配。
+若当初写成 `0`（`Int`）就会抛 `ClassCastException` —— 这种错只在真机上炸，
+`checkKotlinImports` / `check_api` 一个都拦不住。
+
+**2. `completeReadTask` 是 private 方法。** 拿「public 方法」当条件去搜会一直
+找不到它，一度以为被改名了。实际上项目的 `hookAllByName` 是按名字挂载所有
+重载、**不看可见性**，所以挂得上。
+
+顺带把上面那张「Hook 点依据」表补全了 —— 原先只列了 6 项，实际有 16 个；
+现在每行都带源码行号、过滤条件与核对结果。下次 Telegram 升级要重新核对时，
+照着这张表 diff 就行。
 
 ---
 
