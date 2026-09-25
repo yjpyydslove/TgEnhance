@@ -37,7 +37,22 @@ jobs:
           fi
           mkdir -p keystore
           printf '%s' "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore/tgenhance.p12
-          echo "签名密钥已恢复（$(wc -c < keystore/tgenhance.p12) 字节）"
+          echo "密钥文件 $(wc -c < keystore/tgenhance.p12) 字节"
+
+          # 在这里就把密钥与密码验一遍（v N2.3）。
+          #
+          # 不验的话，密码不对要到几分钟后的 packageRelease 才暴露，
+          # 而且报错是一大段 Java 堆栈，看不出「其实是密码粘贴多了个换行」。
+          # 下面只打印长度、不打印内容 —— 长度对不上就是粘贴时带了空格或换行。
+          PW="${{ secrets.KEYSTORE_PASSWORD }}"
+          echo "KEYSTORE_PASSWORD 长度：${#PW} 字符（应为 24）"
+          if keytool -list -keystore keystore/tgenhance.p12 \
+               -storepass "$PW" -storetype PKCS12 > /dev/null 2>&1; then
+            echo "密钥与密码匹配 ✓"
+          else
+            echo "::error::密钥与密码不匹配 —— 请核对 KEYSTORE_PASSWORD 的值（${#PW} 字符，应为 24，且首尾无空格换行）"
+            exit 1
+          fi
 
       # 注意：不要用 android-actions/setup-android@v3，
       # 其默认安装的 "tools" 包已从 SDK 仓库下线，会直接失败。
