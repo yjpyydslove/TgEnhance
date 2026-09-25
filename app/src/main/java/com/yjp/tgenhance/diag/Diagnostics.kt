@@ -204,6 +204,7 @@ object Diagnostics {
         installFailureCheck()?.let { items += it }
         internalErrorCheck()?.let { items += it }
         fuzzyMatchCheck()?.let { items += it }
+        signatureMismatchCheck()?.let { items += it }
         items += frameworkCheck()
         // 反检测自检放最后：它验的是「前面所有拦截都装好之后」的实际效果，
         // 必须等 StealthHooks.install 跑完才有意义
@@ -389,6 +390,33 @@ object Diagnostics {
     }
 
     /**
+     * 签名不符检查（v N1.9）。
+     *
+     * 方法名还在、但没有一个签名满足 Hook 的过滤条件 —— 官方改签名时落在这里。
+     * 这类失败此前表现为**两套标准互相打架**：自检按名字判定说「命中」，
+     * 而 [HookFinder.match] 按签名判定找不到，功能直接不可用
+     * （调用点会把它标进「当前客户端不支持」）。用户同时看到两边矛盾的说法。
+     *
+     * 现在自检改用 HookFinder 的实际判定（逐条会标红），这里再汇总一条，
+     * 让「有几个点是签名问题」一眼可见。
+     *
+     * 注意它与「靠特征兜底命中」是两回事：**那个还能工作，这个已经不能了**。
+     * 所以两者分开报，不合并。
+     */
+    private fun signatureMismatchCheck(): CheckItem? {
+        val hits = HookFinder.signatureMismatches()
+        if (hits.isEmpty()) return null
+
+        XLog.w("[诊断] 以下 Hook 点方法名还在、但签名不符（对应功能已失效）：${hits.joinToString("、")}")
+        return CheckItem(
+            owner = "适配",
+            member = "${hits.size} 个 Hook 点方法名还在但签名不符（该功能已失效）",
+            ok = false,
+            suggestions = hits.take(8)
+        )
+    }
+
+    /**
      * 框架兼容性检查。
      *
      * 这两条信息基本能解释「为什么开关点了没反应」：
@@ -514,10 +542,34 @@ object Diagnostics {
             // continue 走了缺失分支，压根到不了这里。
             // 也就是说那行标注永远不显示，是条死逻辑。删掉，缺口由
             // fuzzyMatchCheck()（整体兜底清单）负责，那里才是准确的位置。
+            //
+            // v N1.9 修正：名字在**不等于** Hook 能找到它 —— HookFinder.match
+            // 还额外要求返回类型与参数个数满足条件。官方改签名时问题正好落在
+            // 这条缝里：自检报「命中」，功能却是不可用的，用户看到两边矛盾。
+            // 所以这里要问一次 HookFinder 的实际判定结果。
+            val mismatch = HookFinder.isSignatureMismatch(cls, methodName)
+
             for (m in overloads) {
                 val params = m.parameterTypes.joinToString(",") { it.simpleName }
-                out.add(CheckItem(simpleName, "$methodName($params)", true))
-                logParts.add("$methodName($params) -> ${m.returnType.simpleName}")
+                out.add(
+                    CheckItem(
+                        owner = simpleName,
+                        member = "$methodName($params)",
+                        ok = !mismatch,
+                        suggestions = if (mismatch) {
+                            listOf(
+                                "方法名还在，但没有一个签名满足 Hook 的过滤条件" +
+                                    "（返回类型 / 参数个数）—— 该功能已失效"
+                            )
+                        } else {
+                            emptyList()
+                        }
+                    )
+                )
+                logParts.add(
+                    "$methodName($params) -> ${m.returnType.simpleName}" +
+                        if (mismatch) "（签名不符，Hook 找不到）" else ""
+                )
             }
         }
 

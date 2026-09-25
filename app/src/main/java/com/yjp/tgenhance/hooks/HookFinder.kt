@@ -108,13 +108,23 @@ object HookFinder {
             .mapNotNull { name ->
                 // 这里要先按「返回类型 / 参数个数」筛一遍再比名字：
                 // 同名重载可能有多个，签名不符的那个不该被选中
-                findMethods(
+                val candidates = findMethods(
                     cls,
                     returnType = returnType,
                     paramCount = paramCount,
                     minParamCount = minParamCount,
                     maxParamCount = maxParamCount
-                ).firstOrNull { it.name.equals(name, ignoreCase = true) }
+                )
+                candidates.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                    ?: run {
+                        // 名字没命中，有两种可能：官方改名了（真缺失），
+                        // 或者只是签名变了（名字还在、过滤条件对不上）。
+                        // 后者必须单独记账 —— 自检是按「方法名在不在」判定的，
+                        // 不记的话它会显示「命中」，于是出现
+                        // 「自检说命中、功能却说不可用」的矛盾画面。
+                        noteSignatureMismatch(cls, name)
+                        null
+                    }
             }
             .distinctBy { simpleSignature(it) }
 
@@ -167,6 +177,49 @@ object HookFinder {
      * 报告里就会出现假警报 —— 用户看到「官方改名了」其实什么都没发生。
      */
     private val fuzzyHits: MutableSet<String> = Collections.synchronizedSet(HashSet())
+
+    /**
+     * 「方法名还在、但没有一个签名满足过滤条件」的方法（v N1.9）。
+     *
+     * 与 [fuzzyHits] 的区别：那个记的是「靠特征兜底找到了」，这个记的是
+     * 「连兜底都没找到，可名字确实还留在类里」。
+     *
+     * 为什么值得单独记：自检是按「方法名存不存在」判定的，而 [match] 还额外
+     * 要求返回类型与参数个数。官方改签名时，问题正好落在中间这条缝里 ——
+     * 自检显示 ✅ 命中，功能实际不可用，用户同时看到两边互相矛盾的说法。
+     * 记下来，自检才能说清楚「名字在，但签名对不上」。
+     */
+    private val signatureMismatches: MutableSet<String> =
+        Collections.synchronizedSet(HashSet<String>())
+
+    /**
+     * 记一次「名字在、签名不符」。
+     *
+     * 名字**根本不在**时不记 —— 那是真缺失，自检本来就会报「方法缺失」，
+     * 重复报只会让报告变吵。
+     */
+    private fun noteSignatureMismatch(cls: Class<*>, name: String) {
+        try {
+            val nameExists = cls.declaredMethods.any { it.name.equals(name, ignoreCase = true) }
+            if (nameExists) signatureMismatches.add(cls.simpleName + "." + name)
+        } catch (t: Throwable) {
+            // 记录失败只影响自检措辞，不影响 Hook 本身
+        }
+    }
+
+    /** 某个方法名是否属于「名字在、但签名不符」。供自检使用。 */
+    fun isSignatureMismatch(cls: Class<*>, methodName: String): Boolean = try {
+        signatureMismatches.contains(cls.simpleName + "." + methodName)
+    } catch (t: Throwable) {
+        false
+    }
+
+    /** 全部「名字在、签名不符」的方法，形如 `类简名.方法名`。供自检汇总。 */
+    fun signatureMismatches(): List<String> = try {
+        signatureMismatches.sorted()
+    } catch (t: Throwable) {
+        emptyList()
+    }
 
     /**
      * 某个方法是否是靠特征兜底命中的。
