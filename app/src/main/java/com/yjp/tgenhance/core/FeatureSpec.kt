@@ -370,9 +370,6 @@ object Features {
     val riskyTitles: Map<String, String> =
         ALL.filter { it.risk != RiskLevel.NONE }.associate { it.key to it.title }
 
-    /** 分组总开关的 key 列表，用于启动日志里打印配置快照。 */
-    val groupRootKeys: List<String> = ALL.filter { it.isGroupRoot }.map { it.key }
-
     // ------------------------------------------------------------------
     // 日用配置（v N1）
     // ------------------------------------------------------------------

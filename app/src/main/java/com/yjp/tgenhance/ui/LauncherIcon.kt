@@ -48,6 +48,24 @@ object LauncherIcon {
         } catch (t: Throwable) {
             false
         }
+
+        // 先对账再动手（v N1.12 补上 —— 此前 isHiddenNow() 定义了却没人调用，
+        // 注释承诺的「配置与系统状态不一致时能指出来」并没有实现）。
+        //
+        // 用户可能从系统设置、LSPosed 管理器或其他方式直接改过组件状态，
+        // 那些操作不经过本模块，配置无从得知。不查这一次的话，
+        // 界面上会出现「开关关着、图标其实已经没了」这种自相矛盾的画面，
+        // 而 apply() 紧接着又把它纠回去 —— 用户看起来就是「开关失灵」。
+        // 留一行日志，问题至少可查。
+        val actual = isHiddenNow(context)
+        if (actual != hide) {
+            XLog.i(
+                "[图标] 系统实际状态与配置不一致" +
+                    "（配置=${if (hide) "隐藏" else "显示"}，" +
+                    "实际=${if (actual) "隐藏" else "显示"}），已按配置纠正"
+            )
+        }
+
         setHidden(context, hide)
         return hide
     }

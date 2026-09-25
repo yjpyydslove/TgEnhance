@@ -362,24 +362,6 @@ object StealthSelfTest {
         null
     }
 
-    /**
-     * 把探测结果渲染成自检报告里的一行。
-     *
-     * 只在**有项目被漏掉**时才判为不通过 —— 全部挡住是常态，
-     * 不该在报告里占一行「正常」；而漏掉任何一项都值得用户注意。
-     */
-    fun render(): String {
-        val probes = lastResult
-        if (probes.isEmpty()) return "未运行"
-        val failed = probes.filter { !it.blocked }
-        return if (failed.isEmpty()) {
-            "全部 ${probes.size} 项探测均已挡住"
-        } else {
-            "有 ${failed.size}/${probes.size} 项未挡住（" +
-                failed.joinToString("、") { it.name } + "）"
-        }
-    }
-
     /** 最近一次探测结果，供自检渲染读取。 */
     @Volatile
     var lastResult: List<Probe> = emptyList()

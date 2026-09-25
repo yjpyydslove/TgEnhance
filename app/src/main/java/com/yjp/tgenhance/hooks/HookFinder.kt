@@ -248,10 +248,6 @@ object HookFinder {
         emptyList()
     }
 
-    /** 供日志阅读的短签名，不输出修饰符与包名。 */
-    fun readableSignature(m: Method): String =
-        "${m.returnType.simpleName} ${m.name}(${m.parameterTypes.joinToString(", ") { it.simpleName }})"
-
     /** 方法唯一标识，用于去重（同名 + 同参数类型）。 */
     private fun simpleSignature(m: Method): String =
         m.name + "(" + m.parameterTypes.joinToString(",") { it.name } + ")"

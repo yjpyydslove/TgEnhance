@@ -122,7 +122,11 @@ object HookStats {
 
             val uptimeSec = (SystemClock.elapsedRealtime() - startedAt) / 1000
             val frequent = entries.filter { it.second >= HIGH_FREQUENCY_THRESHOLD }.map { it.first }
-            XLog.result("统计", "统计时长 ${uptimeSec}s，共 ${entries.size} 个 Hook 点")
+            XLog.result(
+                "统计",
+                "统计时长 ${uptimeSec}s，共 ${entries.size} 个 Hook 点，" +
+                    "其中 ${activeCount()} 项已触发"
+            )
             if (frequent.isNotEmpty()) {
                 XLog.w("[统计] 高频 Hook 点：${frequent.joinToString(", ")}（卡顿时优先关对应功能）")
             }

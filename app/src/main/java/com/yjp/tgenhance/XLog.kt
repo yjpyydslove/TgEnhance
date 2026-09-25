@@ -18,9 +18,6 @@ object XLog {
     private const val TAG = "TgEnhance"
     private const val PREFIX = "TgEnhance"
 
-    @Volatile
-    var enabled: Boolean = true
-
     /**
      * 详细日志开关（v6.7.0）。
      *
@@ -78,7 +75,6 @@ object XLog {
     }
 
     private fun write(msg: String) {
-        if (!enabled) return
         try {
             XposedBridge.log("[$PREFIX] $msg")
         } catch (t: Throwable) {

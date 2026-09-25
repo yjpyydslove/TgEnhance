@@ -89,6 +89,11 @@ object OsCompat {
         append("  接收器导出标志=").append(if (needsReceiverExportFlag) "必需" else "不传")
         append("  强制全屏=").append(if (forcesEdgeToEdge) "是" else "否")
         append("  隐式意图限制=").append(if (restrictsImplicitIntents) "是" else "否")
+        // 比已知上限还新的系统上，前面几个分支的判定未必还成立。
+        // 写进报告里，日后有人拿新系统反馈时能一眼对上（v N1.12 补上）
+        if (isNewerThanKnown()) {
+            append("  ⚠ 系统高于本模块已知范围，按最新已知行为处理")
+        }
     }
 
     /**

@@ -43,6 +43,4 @@ object ConflictWatch {
     } catch (t: Throwable) {
         emptyList()
     }
-
-    val size: Int get() = conflicts.size
 }
