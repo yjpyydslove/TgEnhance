@@ -1230,6 +1230,37 @@ public static UItem of(int id, int iconColorTop, int iconColorBottom,
 
 ---
 
+### N1.15 —— Android 16/17 适配调研 + insets 走现代 API
+
+**先说结论：Android 16 的变更不对本模块生效。** 但这个「不生效」是查出来的，不是猜的。
+
+Android 16（API 36）有几条知名变更，逐条对照本模块：
+
+| 变更 | 影响本模块？ | 为什么 |
+|---|---|---|
+| edge-to-edge 不能再退出 | ❌ | 只对 `targetSdk 36` 生效；本模块是 35，且已自行处理 insets |
+| 预测性返回默认启用（`onBackPressed` 不再被调用） | ❌ | 同上；而且本模块**没有重写** `onBackPressed` |
+| 有序广播优先级不再跨进程 | ❌ | 只影响 `sendOrderedBroadcast`；本模块诊断回传用普通 `sendBroadcast` |
+| Intent 重定向保护 | ❌ | 本模块跳转一律带 `setPackage`，本来就不走重定向 |
+| 16KB page size | ❌ | 影响 native 库；本模块纯 Kotlin，包里没有 `.so` |
+
+调研结论写进了 `OsCompat` 的注释里 —— 下次有人问「支持 Android 16 吗」，
+不用再查一遍。同时标注了一件事：**真要升 `targetSdk` 到 36，前两条需要重新评估。**
+
+**顺手改掉一处过时写法。** 设置页的 insets 处理原来用
+`insets.systemWindowInsetTop` 那一组 —— 它们**在 API 30 就已废弃**
+（现在还能用，但将来某个版本会移除）。改用 `WindowInsets.Type`：
+
+```kotlin
+insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+```
+
+顺带修掉一个被掩盖的问题：`systemBars` 与 `displayCutout` 在**挖孔屏上不是同一块区域**，
+只取前者的话横屏时内容仍可能被挖孔盖住。旧 API 恰好把两者混在一起，
+所以这个隐患一直没暴露。API 30 以下保留旧分支（`minSdk = 26`）。
+
+---
+
 ## 常见问题
 
 **「运行状态」里某项显示「未触发」，是坏了吗？**

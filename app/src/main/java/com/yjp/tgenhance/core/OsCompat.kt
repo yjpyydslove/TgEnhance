@@ -40,10 +40,31 @@ object OsCompat {
     /** Android 15 —— 强制 edge-to-edge、前台服务类型收紧。 */
     const val API_35 = 35
 
-    /** Android 16 —— 目前未发现影响本模块的行为变更。 */
+    /**
+     * Android 16（API 36）。
+     *
+     * 这个版本有几条知名变更，但**都不直接作用到本模块**，
+     * 所以这里只记录调研结论、不新增判定分支：
+     *
+     *  - **edge-to-edge 不能再退出**：`windowOptOutEdgeToEdgeEnforcement`
+     *    对 `targetSdk 36` 的应用失效。本模块 `targetSdk = 35`，
+     *    且已自行处理 insets（见 `SettingsActivity`），不受影响。
+     *  - **预测性返回默认启用**：`onBackPressed` 不再被调用、
+     *    `KEYCODE_BACK` 不再分发。同样只对 `targetSdk 36` 生效；
+     *    而且本模块**没有重写** `onBackPressed`，不依赖这条旧机制。
+     *  - **有序广播的优先级不再跨进程**：只影响 `sendOrderedBroadcast`。
+     *    本模块的诊断回传用的是普通 `sendBroadcast`。
+     *  - **Intent 重定向保护**：本模块的内部跳转一律带 `setPackage`
+     *    （显式 intent），本来就不经过重定向这条路。
+     *  - **16KB page size**：影响的是 native 库；本模块是纯 Kotlin，
+     *    包里没有 `.so`。
+     *
+     * 归结起来：这些变更要么只对 `targetSdk 36` 生效，要么作用在本模块
+     * 压根不用的机制上。**真要升 `targetSdk` 到 36 那天，前两条需要重新评估。**
+     */
     const val API_36 = 36
 
-    /** Android 17 —— 目前未发现影响本模块的行为变更。 */
+    /** Android 17（API 37）—— 尚无稳定形态可调研，按最新已知行为处理。 */
     const val API_37 = 37
 
     val sdkInt: Int get() = Build.VERSION.SDK_INT

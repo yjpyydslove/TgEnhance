@@ -13,6 +13,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.RippleDrawable
+import android.os.Build
 import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
@@ -20,6 +21,7 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowInsets
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -164,13 +166,35 @@ class SettingsActivity : Activity() {
         // Android 15（targetSdk 35）起系统强制 edge-to-edge：内容会一直画到
         // 状态栏和导航栏底下，主题里设的 statusBarColor 也不再生效。
         // 不自己留安全区的话，标题与搜索框会被状态栏盖住、底部按钮会压在导航条上。
+        //
+        // v N1.15：API 30 起改用 WindowInsets.Type。
+        // 旧的 systemWindowInset* 系列**在 API 30 就已废弃**（现在还能用，
+        // 但将来某个版本会移除）；而且 systemBars 与 displayCutout 在挖孔屏上
+        // 并不是同一块区域 —— 只取前者的话，横屏时内容仍可能被挖孔盖住。
         shell.setOnApplyWindowInsetsListener { view, insets ->
-            view.setPadding(
-                insets.systemWindowInsetLeft,
-                insets.systemWindowInsetTop,
-                insets.systemWindowInsetRight,
-                insets.systemWindowInsetBottom
-            )
+            var left = 0
+            var top = 0
+            var right = 0
+            var bottom = 0
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val safe = insets.getInsets(
+                    WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
+                )
+                left = safe.left
+                top = safe.top
+                right = safe.right
+                bottom = safe.bottom
+            } else {
+                @Suppress("DEPRECATION")
+                left = insets.systemWindowInsetLeft
+                @Suppress("DEPRECATION")
+                top = insets.systemWindowInsetTop
+                @Suppress("DEPRECATION")
+                right = insets.systemWindowInsetRight
+                @Suppress("DEPRECATION")
+                bottom = insets.systemWindowInsetBottom
+            }
+            view.setPadding(left, top, right, bottom)
             insets
         }
 
