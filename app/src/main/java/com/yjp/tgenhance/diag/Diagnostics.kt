@@ -6,9 +6,13 @@ import com.yjp.tgenhance.core.Features
 import com.yjp.tgenhance.core.OsCompat
 import com.yjp.tgenhance.hooks.ClientProfileDetector
 import com.yjp.tgenhance.hooks.ConflictWatch
+import com.yjp.tgenhance.hooks.HookCatalog
 import com.yjp.tgenhance.hooks.HookFinder
+import com.yjp.tgenhance.hooks.HookRegistry
 import com.yjp.tgenhance.hooks.HookStatus
+import com.yjp.tgenhance.hooks.HookTarget
 import com.yjp.tgenhance.hooks.StealthSelfTest
+import com.yjp.tgenhance.hooks.TargetOwner
 import de.robv.android.xposed.XposedHelpers
 
 /**
@@ -39,89 +43,61 @@ object Diagnostics {
         val suggestions: List<String> = emptyList()
     )
 
-    private data class Target(val className: String, val methods: List<String>)
+    /**
+     * 注册表与统计表的一致性（v N2.0）。
+     *
+     * [HookRegistry] 声明**挂载点**，[HookCatalog] 声明**运行期计数点**，
+     * 两者靠 key 对应。对不上时不会有任何报错，只表现为莫名其妙：
+     * 某一行在「运行状态」里永远显示 0，或者某次计数显示成原始的 `privacy.foo`。
+     *
+     * 这条检查直接比较两张表的真实内容（不是文本匹配），所以既不会漏也不会误报。
+     *
+     * 两类豁免：
+     *  - `stealth.*` —— 隐身的拦截面由 [StealthSelfTest] 独立覆盖，
+     *    它们不是通过 [HookRegistry] 挂载的；
+     *  - `internal.callbackError` —— 由日志模块自己打点，不对应任何挂载点。
+     */
+    private fun registryConsistency(): CheckItem? {
+        val declared = HookCatalog.statKeys.toSet()
+        val covered = HookRegistry.coveredStatKeys.toSet()
+        val exempt = declared.filter { it.startsWith("stealth.") }.toSet() +
+            setOf("internal.callbackError")
+
+        val missing = (declared - covered - exempt).sorted()
+        val extra = (covered - declared).sorted()
+        if (missing.isEmpty() && extra.isEmpty()) return null
+
+        val problems = ArrayList<String>()
+        if (missing.isNotEmpty()) problems += "有计数点没有挂载点声明：${missing.joinToString("、")}"
+        if (extra.isNotEmpty()) problems += "有挂载点指向不存在的计数点：${extra.joinToString("、")}"
+
+        XLog.w("[诊断] 注册表与统计表不一致：${problems.joinToString("；")}")
+        return CheckItem(
+            owner = "注册表",
+            member = "挂载点与计数点不一致（${missing.size + extra.size} 处）",
+            ok = false,
+            suggestions = problems
+        )
+    }
 
     /**
-     * 待探测清单。新增 Hook 点时同步加到这里，否则自检会漏项。
-     */
-    private val TARGETS = listOf(
-        Target(
-            "org.telegram.messenger.UserConfig",
-            listOf(
-                "getMaxAccountCount", "getInstance",
-                "getActivatedAccountsCount", "hasPremiumOnAccounts"
-            )
-        ),
-        Target(
-            "org.telegram.messenger.AccountInstance",
-            listOf("getInstance")
-        ),
-        Target(
-            "org.telegram.messenger.MessagesController",
-            listOf(
-                "deleteMessages", "sendTyping", "completeReadTask", "getSponsoredMessages",
-                // 隐藏在线状态的挂载点。此前漏登记 —— 它改名时功能会静默失效，
-                // 而自检因为压根没查这一项，会照样全绿（v N1.7 补）
-                "updateTimerProc"
-            )
-        ),
-        Target(
-            "org.telegram.messenger.LocaleController",
-            listOf("formatUserStatus")
-        ),
-        Target(
-            "org.telegram.messenger.AndroidUtilities",
-            listOf(
-                "getTypeface", "isTabletForce",
-                // 平板判定要挂两个方法：isTabletInternal() 内部会把结果缓存进
-                // 静态字段，只改前者的话首次调用之后就不再走原来那条路。
-                // 两个都是挂载点，就都该被自检盯着（v N1.7 补）
-                "isTabletInternal"
-            )
-        ),
-        Target(
-            "org.telegram.messenger.SharedConfig",
-            listOf("isAutoplayVideo", "isAutoplayGifs", "isAppUpdateAvailable")
-        ),
-        Target(
-            "org.telegram.PhoneFormat.PhoneFormat",
-            listOf("format")
-        ),
-        Target(
-            "org.telegram.tgnet.ConnectionsManager",
-            listOf("checkProxy")
-        ),
-        Target(
-            "org.telegram.messenger.DownloadController",
-            listOf("canDownloadMedia")
-        ),
-        Target(
-            "org.telegram.ui.LaunchActivity",
-            listOf("onResume", "onPause")
-        ),
-        // StoriesController 与主 Activity 不写死路径：各 fork 可能把它们搬到别处，
-        // 由 ClientProfileDetector 解析出实际类名后再检查（见 run）
-    )
-
-    /** Stories 相关查询方法，用于对解析出的 StoriesController 做自检。 */
-    private val STORIES_METHODS = listOf(
-        "hasStories", "hasUnreadStories", "hasHiddenStories", "hasSelfStories"
-    )
-
-    /**
-     * 设置页的列表构建与点击方法（v N1.1 起探测，v N1.4 起真正用到）。
+     * 待探测清单 —— **从 [HookRegistry] 派生**（v N2.0）。
      *
-     * 两个版本线的命名不同，这里都列上，谁的命中结果就是谁：
-     *  - 旧版（rowInfo 时代）：`fillItems` 不在 Fragment 上，条目用 `addRow`
-     *  - 新版（`UItem` + `UniversalAdapter`）：`fillItems(ArrayList, UniversalAdapter)`
+     * 在此之前这里手写了一份清单，与实际挂载点各维护一份。结果是反复出问题：
      *
-     * `onClick` 是注入入口点击的挂载点。**没命中不等于设置页入口一定不可用** ——
-     * 注入失败还有好几条别的路径（UItem 工厂方法、锚点项），
-     * 真正是否注入成功的结论看「运行状态」里的「设置页入口注入」计数。
+     *  - **N1.7**：`updateTimerProc`、`isTabletInternal` 两个挂载点从没进过这份
+     *    清单 —— 它们改名时功能会静默失效，而自检照样全绿；
+     *  - **N1.9**：这份清单只看「方法名在不在」，而 `HookFinder` 还要看返回类型
+     *    与参数个数 —— 官方改签名时，自检说「命中」而功能说「不可用」，两边矛盾。
+     *
+     * 两轮都是打补丁。现在改成从注册表读：**注册表里有什么就查什么**，
+     * 「加了挂载点却漏了自检」在结构上不可能再发生。
+     *
+     * 类名也不再写死在这里 —— 主 Activity / StoriesController / 设置页
+     * 三类的实际路径由 [TargetOwner] 标记、运行期交给 `ClientProfileDetector`
+     * 解析（fork 会把它们搬到别处）。
      */
-    private val SETTINGS_METHODS = listOf(
-        "fillItems", "onClick", "onLongClick", "addRow", "createView"
-    )
+    private val TARGETS: List<HookTarget> get() = HookRegistry.selfCheckTargets
 
     @Volatile
     private var lastReport: List<CheckItem> = emptyList()
@@ -181,24 +157,17 @@ object Diagnostics {
                     }
                 }
             )
-            // 用解析出的真实类路径做自检，而不是写死路径
-            profile.launchActivity?.let {
-                items += check(classLoader, Target(it, listOf("onResume", "onPause")))
-            }
-            profile.storiesController?.let {
-                items += check(classLoader, Target(it, STORIES_METHODS))
-            }
-            // 设置页单独成项：注入入口要挂到它的列表构建方法上，
-            // 先把「方法在不在、叫什么」探出来，将来做注入时不必再猜
-            profile.settingsFragment?.let {
-                items += check(classLoader, Target(it, SETTINGS_METHODS))
-            }
+            // 主 Activity / StoriesController / 设置页这三类的自检**不在这里做**
+            // （v N2.0）：它们已经作为 HookTarget 进了 [HookRegistry]，
+            // 由下面的 TARGETS 循环统一覆盖。此前在这里对每个解析出的类
+            // 各调一次 check()，等于同一件事有两个入口，容易改一处漏一处。
         }
 
         for (target in TARGETS) {
             items += check(classLoader, target)
         }
         configConsistency()?.let { items += it }
+        registryConsistency()?.let { items += it }
         conflictCheck()?.let { items += it }
         availabilityCheck()?.let { items += it }
         installFailureCheck()?.let { items += it }
@@ -497,24 +466,52 @@ object Diagnostics {
         }
     }
 
-    private fun check(classLoader: ClassLoader, target: Target): List<CheckItem> {
-        val simpleName = target.className.substringAfterLast('.')
-
-        val cls = try {
-            XposedHelpers.findClassIfExists(target.className, classLoader)
-        } catch (t: Throwable) {
-            null
+    /**
+     * 解析一个 Hook 点对应的类（v N2.0）。
+     *
+     * 类名有两种来源：写死在注册表里的（[TargetOwner.FIXED]），
+     * 以及运行期从客户端档案解析的（主 Activity / StoriesController /
+     * 设置页 —— fork 会把它们搬到别处）。此前这件事散在 run() 里、
+     * 对每个 profile 字段各写一遍，现在收在一处。
+     */
+    private fun resolveClass(target: HookTarget, classLoader: ClassLoader): Class<*>? = try {
+        when (target.owner) {
+            TargetOwner.FIXED ->
+                XposedHelpers.findClassIfExists(target.className, classLoader)
+            TargetOwner.LAUNCH_ACTIVITY ->
+                ClientProfileDetector.launchActivityClass(classLoader)
+            TargetOwner.STORIES_CONTROLLER ->
+                ClientProfileDetector.storiesControllerClass(classLoader)
+            TargetOwner.SETTINGS_FRAGMENT ->
+                ClientProfileDetector.settingsFragmentClass(classLoader)
         }
+    } catch (t: Throwable) {
+        null
+    }
+
+    private fun check(classLoader: ClassLoader, target: HookTarget): List<CheckItem> {
+        val simpleName = target.shortName
+
+        val cls = resolveClass(target, classLoader)
 
         if (cls == null) {
-            XLog.w("[诊断] 类不存在: ${target.className}")
-            return listOf(CheckItem(simpleName, MISSING_CLASS, false))
+            // 类缺失对某些客户端是正常的（老版本没有 Stories 之类），
+            // 但至少要说清是哪个功能的目标类，而不是只丢一个类简名
+            XLog.w("[诊断] 类不存在: $simpleName（${target.label}）")
+            return listOf(
+                CheckItem(
+                    owner = simpleName,
+                    member = MISSING_CLASS,
+                    ok = false,
+                    suggestions = listOf("目标类缺失：${target.label}")
+                )
+            )
         }
 
         val out = ArrayList<CheckItem>()
         val logParts = ArrayList<String>()
 
-        for (methodName in target.methods) {
+        for (methodName in target.names) {
             val overloads = try {
                 cls.declaredMethods.filter { it.name == methodName }
             } catch (t: Throwable) {
