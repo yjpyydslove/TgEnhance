@@ -133,10 +133,18 @@ object AccountHooks {
             for (method in targets) {
                 HookInstaller.hookMethodQuietly(method, object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
-                        if (param.args.isNotEmpty()) return
-                        HookStats.hit("account.maxCount")
-                        if (!Prefs.accountEnabled) return
-                        param.result = Prefs.maxAccounts
+                        // 这里必须包 guard：`param.result` 的赋值只有在返回类型
+                        // 与目标方法一致时才合法，而「返回 int」这个前提是靠
+                        // HookFinder 的 returnType 过滤来的。哪天 TG 把签名改成
+                        // 返回 long，这里就会抛 —— 包了 guard 它会落进
+                        // 「回调异常」计数、在「运行状态」里直接看到；
+                        // 不包则只是框架日志里一句没有模块前缀的异常，无从归因。
+                        guard("账号上限") {
+                            if (param.args.isNotEmpty()) return@guard
+                            HookStats.hit("account.maxCount")
+                            if (!Prefs.accountEnabled) return@guard
+                            param.result = Prefs.maxAccounts
+                        }
                     }
                 })
             }

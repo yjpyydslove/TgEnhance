@@ -159,11 +159,12 @@ object StealthHooks {
         safe("类加载隐身") {
             HookInstaller.hookAllByName(cls, "loadClass", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
+                    // 刻意不包 guard：本回调的**任务就是抛异常**。
+                    // guard 会把异常吞掉，隐身随之静默失效 —— 而且看不出来。
                     if (!Prefs.hideXposed) return
                     val name = param.args.getOrNull(0) as? String ?: return
                     if (!hiddenByPrefix(name)) return
                     HookStats.hit("stealth.classLoad")
-                    // 注意：这里必须真的抛出去，不能包 guard
                     throw ClassNotFoundException(name)
                 }
             })
@@ -318,11 +319,11 @@ object StealthHooks {
         safe("包名隐身") {
             HookInstaller.hookAllByName(cls, "getPackageInfo", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
+                    // 刻意不包 guard：同 loadClass —— 这里要的就是把异常抛给调用方
                     if (!Prefs.hideXposed) return
                     val pkg = param.args.getOrNull(0) as? String ?: return
                     if (pkg != Prefs.MODULE_PKG) return
                     HookStats.hit("stealth.pkgQuery")
-                    // 同上：必须真的抛出去
                     throw PackageManager.NameNotFoundException(pkg)
                 }
             })
@@ -355,6 +356,7 @@ object StealthHooks {
         safe("应用信息隐身") {
             val hooked = HookInstaller.hookAllByName(cls, "getApplicationInfo", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
+                    // 刻意不包 guard：同 loadClass —— 这里要的就是把异常抛给调用方
                     if (!Prefs.hideXposed) return
                     // 第一个参数在所有重载里都是包名
                     val pkg = param.args.getOrNull(0) as? String ?: return

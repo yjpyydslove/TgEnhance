@@ -319,6 +319,9 @@ object PrivacyHooks {
         safe("隐藏在线状态") {
             HookInstaller.hookAllByName(cls, "updateTimerProc", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
+                    // 刻意不包 guard：下面的 try-catch 是**有语义的** ——
+                    // 它区分「字段写不进去」这一种可预期失败，并只提醒一次。
+                    // 套上 guard 会把它降级成通用回调异常，反而丢失这条具体线索。
                     if (!Prefs.privacyEnabled || !Prefs.hideOnline) return
                     try {
                         XposedHelpers.setBooleanField(param.thisObject, "ignoreSetOnline", true)

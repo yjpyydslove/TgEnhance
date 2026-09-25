@@ -2,6 +2,7 @@ package com.yjp.tgenhance.hooks
 
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.XLog
+import com.yjp.tgenhance.XLog.guard
 import com.yjp.tgenhance.XLog.safe
 import com.yjp.tgenhance.diag.HookStats
 import de.robv.android.xposed.XC_MethodHook
@@ -65,10 +66,15 @@ object NetworkHooks {
             for (method in targets) {
                 HookInstaller.hookMethodQuietly(method, object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
-                        HookStats.hit("net.proxyProbe")
-                        if (!Prefs.netEnabled || !Prefs.blockProxyProbe) return
-                        param.result = 0L
-                        XLog.result("网络", "已阻止一次代理探测（真实 IP 不外泄）")
+                        // 包 guard 的原因见 AccountHooks.getMaxAccountCount：
+                        // `param.result` 的赋值在返回类型对不上时会抛，
+                        // 要让它落进「回调异常」计数，而不是变成归因不明的框架日志
+                        guard("代理探测防护") {
+                            HookStats.hit("net.proxyProbe")
+                            if (!Prefs.netEnabled || !Prefs.blockProxyProbe) return@guard
+                            param.result = 0L
+                            XLog.result("网络", "已阻止一次代理探测（真实 IP 不外泄）")
+                        }
                     }
                 })
             }

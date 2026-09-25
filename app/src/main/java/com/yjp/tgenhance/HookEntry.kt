@@ -199,6 +199,9 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
             XposedHelpers.findAndHookMethod(
                 "android.app.Application", classLoader, "onCreate",
                 object : XC_MethodHook() {
+                    // 刻意不包 guard：内层已有针对性的 try-catch。
+                    // 这里失败只会导致「统计不输出」，不该被计成回调异常 ——
+                    // 那会让「运行状态」里出现一条并不影响使用的噪音。
                     override fun afterHookedMethod(param: MethodHookParam) {
                         val app = param.thisObject as? android.app.Application ?: return
                         try {
