@@ -7,3 +7,7 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+
+# 签名密钥不再入库（v N2.2）—— 原来连同密码公开在仓库里，
+# 任何人拿到都能签一个能覆盖升级的假包。现在由 CI Secret 注入。
+keystore/

@@ -8,8 +8,16 @@ plugins {
 val appVersionName: String = (project.findProperty("VERSION_NAME") as String?) ?: "1.0.0"
 val appVersionCode: Int = ((project.findProperty("VERSION_CODE") as String?) ?: "1").toInt()
 
-// 固定自签名密钥（随仓库公开，仅用于自编译安装包，避免每次 CI 签名不一致导致无法覆盖升级）
+// 签名密钥（v N2.2 起不再随仓库公开）
+//
+// 原来密钥连同密码一起提交在仓库里，任何人拿到都能签一个能覆盖升级的假包。
+// 现在：CI 上由 GitHub Secret 注入密钥文件、密码走环境变量；
+// 密钥文件已在 .gitignore 里，本地自己构建时放一份即可。
 val keystoreFile = rootProject.file("keystore/tgenhance.p12")
+
+// 密码从环境变量读。本地没设时回退到旧的固定值，方便本机出包；
+// CI 上必须由 Secret 提供（workflow 里会检查）。
+val keystorePassword: String = System.getenv("KEYSTORE_PASSWORD") ?: "tgenhance"
 
 android {
     namespace = "com.yjp.tgenhance"
@@ -25,9 +33,9 @@ android {
         if (keystoreFile.exists()) {
             create("fixed") {
                 storeFile = keystoreFile
-                storePassword = "tgenhance"
+                storePassword = keystorePassword
                 keyAlias = "tgenhance"
-                keyPassword = "tgenhance"
+                keyPassword = keystorePassword
                 storeType = "PKCS12"
             }
         }
