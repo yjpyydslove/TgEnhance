@@ -58,7 +58,12 @@ object Diagnostics {
         ),
         Target(
             "org.telegram.messenger.MessagesController",
-            listOf("deleteMessages", "sendTyping", "completeReadTask", "getSponsoredMessages")
+            listOf(
+                "deleteMessages", "sendTyping", "completeReadTask", "getSponsoredMessages",
+                // 隐藏在线状态的挂载点。此前漏登记 —— 它改名时功能会静默失效，
+                // 而自检因为压根没查这一项，会照样全绿（v N1.7 补）
+                "updateTimerProc"
+            )
         ),
         Target(
             "org.telegram.messenger.LocaleController",
@@ -66,7 +71,13 @@ object Diagnostics {
         ),
         Target(
             "org.telegram.messenger.AndroidUtilities",
-            listOf("getTypeface", "isTabletForce")
+            listOf(
+                "getTypeface", "isTabletForce",
+                // 平板判定要挂两个方法：isTabletInternal() 内部会把结果缓存进
+                // 静态字段，只改前者的话首次调用之后就不再走原来那条路。
+                // 两个都是挂载点，就都该被自检盯着（v N1.7 补）
+                "isTabletInternal"
+            )
         ),
         Target(
             "org.telegram.messenger.SharedConfig",
