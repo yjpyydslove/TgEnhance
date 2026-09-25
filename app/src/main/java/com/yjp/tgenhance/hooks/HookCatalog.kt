@@ -39,6 +39,7 @@ object HookCatalog {
         HookPoint("ui.stories", "Stories 显示查询"),
         HookPoint("ui.tablet", "平板布局判定"),
         HookPoint("ui.updateCheck", "更新检查"),
+        HookPoint("ui.settingsEntry", "设置页入口注入"),
 
         // 网络
         HookPoint("net.proxyProbe", "代理连通性探测"),

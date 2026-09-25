@@ -15,6 +15,7 @@ import com.yjp.tgenhance.hooks.HookInstaller
 import com.yjp.tgenhance.hooks.HookStatus
 import com.yjp.tgenhance.hooks.NetworkHooks
 import com.yjp.tgenhance.hooks.PrivacyHooks
+import com.yjp.tgenhance.hooks.SettingsEntry
 import com.yjp.tgenhance.hooks.StealthHooks
 import com.yjp.tgenhance.hooks.ThemeHooks
 import de.robv.android.xposed.IXposedHookLoadPackage
@@ -80,6 +81,7 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         val installResults = linkedMapOf(
             "多账号" to XLog.timed("AccountHooks") { AccountHooks.install(lpparam.classLoader) },
             "界面" to XLog.timed("ThemeHooks") { ThemeHooks.install(lpparam.classLoader) },
+            "设置入口" to XLog.timed("SettingsEntry") { SettingsEntry.install(lpparam.classLoader) },
             "网络" to XLog.timed("NetworkHooks") { NetworkHooks.install(lpparam.classLoader) },
             "隐私" to XLog.timed("PrivacyHooks") { PrivacyHooks.install(lpparam.classLoader) },
             "反检测" to XLog.timed("StealthHooks") { StealthHooks.install(lpparam.classLoader) },

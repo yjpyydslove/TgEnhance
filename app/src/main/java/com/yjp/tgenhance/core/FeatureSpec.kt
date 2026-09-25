@@ -109,6 +109,14 @@ object Features {
             isDaily = true
         ),
         FeatureSpec(
+            key = Prefs.SETTINGS_ENTRY,
+            group = FeatureGroup.UI,
+            title = "在 Telegram 设置里添加入口",
+            summary = "在 Telegram 设置页底部加一项，点击直接打开本模块的设置界面。",
+            default = true,
+            isDaily = true
+        ),
+        FeatureSpec(
             key = Prefs.SYSTEM_FONT,
             group = FeatureGroup.UI,
             title = "使用系统字体",

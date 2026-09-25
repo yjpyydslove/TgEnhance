@@ -68,6 +68,23 @@ object Prefs {
      */
     const val HIDE_LAUNCHER_ICON = "hide_launcher_icon"
 
+    /**
+     * 在 Telegram 自己的设置页里加一个入口（v N1.4）。
+     *
+     * 由 hook 端读、hook 端用：为 true 时往设置页列表里插一行，
+     * 点击直接拉起模块设置界面。桌面上隐藏了图标之后，这个入口尤其有用。
+     */
+    const val SETTINGS_ENTRY = "settings_entry"
+
+    /**
+     * 唤起模块设置界面的显式 action。
+     *
+     * 必须与 `AndroidManifest.xml` 里 `SettingsActivity` 的 `<intent-filter>` 一致 ——
+     * 那边写的是字面量，改这里要同步改那边。两处都对不上时，
+     * 点击入口只会得到一个 `ActivityNotFoundException`。
+     */
+    const val ACTION_SETTINGS = "com.yjp.tgenhance.action.SETTINGS"
+
     // ---------------- 反检测 ----------------
     const val HIDE_XPOSED = "hide_xposed"
 
@@ -294,6 +311,15 @@ object Prefs {
     val hidePeerOnline: Boolean get() = hookBoolean(HIDE_PEER_ONLINE, false)
     val hidePeerStatus: Boolean get() = hookBoolean(HIDE_PEER_STATUS, false)
     val hidePhone: Boolean get() = hookBoolean(HIDE_PHONE, false)
+
+    /**
+     * 界面：在 Telegram 设置页里添加入口。
+     *
+     * 默认值给 true 是有意的 —— 这是个**纯增益**功能（多一个入口，不改动任何
+     * Telegram 行为），老用户升级后配置里没有这个 key 时应当直接生效，
+     * 而不是要先去设置界面手动打开一次。
+     */
+    val settingsEntry: Boolean get() = hookBoolean(SETTINGS_ENTRY, true)
 
     /** 反检测：隐藏模块与 Xposed 框架的痕迹。 */
     val hideXposed: Boolean get() = hookBoolean(HIDE_XPOSED, false)
