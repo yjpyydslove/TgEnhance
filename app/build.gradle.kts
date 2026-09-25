@@ -15,9 +15,23 @@ val appVersionCode: Int = ((project.findProperty("VERSION_CODE") as String?) ?: 
 // 密钥文件已在 .gitignore 里，本地自己构建时放一份即可。
 val keystoreFile = rootProject.file("keystore/tgenhance.p12")
 
-// 密码从环境变量读。本地没设时回退到旧的固定值，方便本机出包；
-// CI 上必须由 Secret 提供（workflow 里会检查）。
-val keystorePassword: String = System.getenv("KEYSTORE_PASSWORD") ?: "tgenhance"
+// 密码从环境变量读。
+//
+// **CI 上缺了就直接报错**（v N2.4）—— 之前这里静默回退到占位值，
+// 结果 Secret 配好了、密钥也恢复了，打包时却报「密码不对」，
+// 查了好几轮才发现是 workflow 忘了用 env 传进来。
+// 静默回退把「配置漏了一环」伪装成了「密码错误」，代价太大。
+val keystorePassword: String = System.getenv("KEYSTORE_PASSWORD")
+    ?: if (System.getenv("CI") != null) {
+        throw GradleException(
+            "CI 环境下缺少 KEYSTORE_PASSWORD 环境变量。" +
+                "请在 workflow 的构建步骤里加上 " +
+                "`KEYSTORE_PASSWORD: \${{ secrets.KEYSTORE_PASSWORD }}`。"
+        )
+    } else {
+        // 本地构建：没设环境变量时用占位值，方便本机出包
+        "tgenhance"
+    }
 
 android {
     namespace = "com.yjp.tgenhance"

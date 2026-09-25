@@ -78,6 +78,15 @@ jobs:
       - name: 编译 Release APK
         run: gradle assembleRelease --no-daemon --stacktrace
         env:
+          # 密钥密码必须在这里传给 Gradle（v N2.4）。
+          #
+          # build.gradle.kts 是 `System.getenv("KEYSTORE_PASSWORD")` 读的，
+          # 而 GitHub Actions 的 Secret **不会自动变成环境变量** ——
+          # 不显式声明这一行，Gradle 拿到的是 null、回退到占位密码，
+          # 于是打包阶段报「keystore password was incorrect」。
+          # 之前那几轮失败全是因为漏了这一行：密钥文件、密码长度、
+          # keytool 校验全都正常，唯独 Gradle 用的是另一个密码。
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx3072m -Dfile.encoding=UTF-8"
 
       - name: 整理产物
