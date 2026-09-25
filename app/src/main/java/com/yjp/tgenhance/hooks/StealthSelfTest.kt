@@ -2,6 +2,8 @@ package com.yjp.tgenhance.hooks
 
 import com.yjp.tgenhance.Prefs
 import de.robv.android.xposed.XposedHelpers
+import java.io.PrintWriter
+import java.io.StringWriter
 
 /**
  * 反检测的**自我验证**（v N1.2）。
@@ -61,7 +63,10 @@ object StealthSelfTest {
         return listOf(
             probeClassLoad(classLoader),
             probeStackFrame(),
+            probeAllStackTraces(),
+            probeStackTracePrint(),
             probeInstalledPackages(),
+            probeInstalledApplications(),
             probeOwnPackage(),
             probeModifiers()
         )
@@ -121,7 +126,87 @@ object StealthSelfTest {
     }
 
     /**
-     * 探测 3：模块是否出现在「已安装应用」列表里。
+     * 探测 3：扫**所有线程**的栈，看有没有框架帧。
+     *
+     * 前一项只验了「当前线程的栈」。检测方更愿意一次拿全部线程的栈 ——
+     * 一次调用就能看到所有线程上有没有框架痕迹，比逐线程取高效得多，
+     * 收获也更大：我们的 hook 回调可能停在任何一个线程上。
+     *
+     * 这一项对应 `Thread.getAllStackTraces()` 那条拦截。不单独验的话，
+     * 那条拦截失效时自检照样全绿，等于白挡。
+     */
+    private fun probeAllStackTraces(): Probe {
+        val scanned = try {
+            Thread.getAllStackTraces()
+        } catch (t: Throwable) {
+            return Probe("全线程堆栈探测", false, "无法获取全线程栈，跳过")
+        }
+        if (scanned.isEmpty()) {
+            return Probe("全线程堆栈探测", false, "未取到任何线程栈，跳过")
+        }
+
+        var frames = 0
+        var leaked = 0
+        var sample: String? = null
+        for ((_, stack) in scanned) {
+            for (frame in stack) {
+                frames++
+                if (StealthHooks.isHiddenName(frame.className)) {
+                    leaked++
+                    if (sample == null) sample = frame.className
+                }
+            }
+        }
+        return Probe(
+            name = "全线程堆栈探测",
+            blocked = leaked == 0,
+            detail = if (leaked == 0) {
+                "扫 ${scanned.size} 个线程共 $frames 个帧，无框架帧"
+            } else {
+                "仍有 $leaked 个框架帧暴露（$sample）"
+            }
+        )
+    }
+
+    /**
+     * 探测 4：`printStackTrace` 的输出里有没有框架痕迹。
+     *
+     * 这一条**必须单独验**，不能靠前两项代替：`printStackTrace` 内部走的是
+     * `Throwable.getOurStackTrace()`，而**公开的 `getStackTrace()` 不经过它**
+     * （那边另有一份 clone 逻辑）。两条路径各自被拦，也就得各自被验。
+     *
+     * 做法和检测方一样：把异常打到内存流里，再搜关键字。
+     * 输出里既不该有 `de.robv.android.xposed.*`，也不该有本模块的包名 ——
+     * 后者同样会被剔除（`com.yjp.tgenhance` 在前缀名单里）。
+     */
+    private fun probeStackTracePrint(): Probe {
+        val text = try {
+            val buffer = StringWriter()
+            val writer = PrintWriter(buffer)
+            Throwable("tgenhance-probe").printStackTrace(writer)
+            writer.flush()
+            buffer.toString()
+        } catch (t: Throwable) {
+            return Probe("堆栈打印探测", false, "无法捕获打印输出，跳过")
+        }
+        if (text.isEmpty()) {
+            return Probe("堆栈打印探测", false, "打印输出为空，跳过")
+        }
+
+        val leaked = StealthHooks.hiddenPrefixes.filter { text.contains(it) }
+        return Probe(
+            name = "堆栈打印探测",
+            blocked = leaked.isEmpty(),
+            detail = if (leaked.isEmpty()) {
+                "printStackTrace 输出中无框架痕迹"
+            } else {
+                "输出中仍含 ${leaked.joinToString("、")}"
+            }
+        )
+    }
+
+    /**
+     * 探测 5：模块是否出现在「已安装包」列表里。
      *
      * 用 `AndroidAppHelper` 拿当前 Application 再查 —— 和检测方的做法一致。
      * 用 `PackageManager.GET_META_DATA` 是为了同时验证 meta-data 有没有被读到。
@@ -129,15 +214,44 @@ object StealthSelfTest {
     private fun probeInstalledPackages(): Probe = try {
         val app = android.app.AndroidAppHelper.currentApplication()
         if (app == null) {
-            Probe("已安装应用列表探测", false, "未取到 Application，跳过")
+            Probe("已安装包列表探测", false, "未取到 Application，跳过")
         } else {
             val found = app.packageManager
                 .getInstalledPackages(0)
                 .any { it.packageName == Prefs.MODULE_PKG }
             Probe(
-                name = "已安装应用列表探测",
+                name = "已安装包列表探测",
                 blocked = !found,
                 detail = if (!found) "列表中已剔除本模块" else "列表中仍能看到本模块包名"
+            )
+        }
+    } catch (t: Throwable) {
+        Probe("已安装包列表探测", false, "查询失败：${t.javaClass.simpleName}")
+    }
+
+    /**
+     * 探测 6：模块是否出现在「已安装应用」列表里。
+     *
+     * 与探测 5 是**两条不同的代码路径**：那个返回 `PackageInfo`，
+     * 这个返回 `ApplicationInfo`。检测方两条都会试，
+     * 所以拦截和自检都得成对 —— 只拦一条、只验一条，等于留了个后门。
+     */
+    private fun probeInstalledApplications(): Probe = try {
+        val app = android.app.AndroidAppHelper.currentApplication()
+        if (app == null) {
+            Probe("已安装应用列表探测", false, "未取到 Application，跳过")
+        } else {
+            val found = app.packageManager
+                .getInstalledApplications(0)
+                .any { it.packageName == Prefs.MODULE_PKG }
+            Probe(
+                name = "已安装应用列表探测",
+                blocked = !found,
+                detail = if (!found) {
+                    "getInstalledApplications 中已剔除本模块"
+                } else {
+                    "列表中仍能看到本模块包名"
+                }
             )
         }
     } catch (t: Throwable) {
@@ -145,7 +259,7 @@ object StealthSelfTest {
     }
 
     /**
-     * 探测 4：按包名直接查模块。
+     * 探测 7：按包名直接查模块。
      *
      * 与探测 3 的区别：那个是「列全部再找」，这个是「指名道姓地查」。
      * 两者走不同的代码路径，拦截点也不同，所以分开验。
@@ -195,7 +309,7 @@ object StealthSelfTest {
     }
 
     /**
-     * 探测 5：被本模块 hook 过的方法是否还带 native 标志。
+     * 探测 8：被本模块 hook 过的方法是否还带 native 标志。
      *
      * 这是最隐蔽也最致命的一种检测：逐个反射目标类的方法，
      * 看哪个 Java 方法变成了 native。

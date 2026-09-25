@@ -887,6 +887,34 @@ check_hook_guard.py       # 回调异常防护（v N1.5 新增）
 
 ---
 
+### N1.6 —— 反检测自检补全
+
+N1.1 给隐身加了三条新拦截（`Thread.getAllStackTraces`、`printStackTrace` 的取栈路径、
+`getApplicationInfo`），N1.2 又把「隐身到底有没有生效」做成了自检 ——
+但两边**没有对齐**：自检只覆盖 5 项，新加的拦截里有三条没人验。
+
+后果很具体：**那三条失效时自检照样全绿**。用户看到的是一句
+「全部 5 项探测均已挡住」，实际上有三个方向是敞开的。
+
+这一版把自检与拦截面补齐对齐，**从 5 项到 8 项**：
+
+| 新增探测 | 对应拦截 | 检测方会怎么做 |
+|---|---|---|
+| 全线程堆栈探测 | `Thread.getAllStackTraces()` | 一次拿**所有线程**的栈找框架帧 —— 比逐线程取高效得多，收获也更大 |
+| 堆栈打印探测 | `Throwable.getOurStackTrace()` | 把异常打到内存流里再搜关键字，不留痕迹 |
+| 已安装应用列表探测 | `getInstalledApplications()` | 与 `getInstalledPackages` 是两条路径，检测方两条都会试 |
+
+**其中「堆栈打印探测」最容易被漏掉。** `printStackTrace` 内部走的是
+`Throwable.getOurStackTrace()`，而**公开的 `getStackTrace()` 不经过它** ——
+那边另有一份 clone 逻辑。两条路径各自被拦，也就必须各自被验：
+只验 `getStackTrace` 那条，`printStackTrace` 就是敞开的，
+而检测方恰恰更爱用后者。
+
+至此自检的每一项都能对应到一条实际拦截，报告里不再有
+「看起来全绿、实际有缺口」的情况。
+
+---
+
 ## 常见问题
 
 **「运行状态」里某项显示「未触发」，是坏了吗？**
