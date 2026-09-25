@@ -98,21 +98,18 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
             XLog.e("[挂载] 多数情况是 Telegram 版本变动或作用域未勾选，请连同版本号一起反馈")
         }
 
-        var diagCost = 0L
-        if (Prefs.diagEnabled) {
-            val diagStart = SystemClock.elapsedRealtime()
-            XLog.timed("Diagnostics") { Diagnostics.run(lpparam.classLoader) }
-            diagCost = SystemClock.elapsedRealtime() - diagStart
-        } else {
+        if (!Prefs.diagEnabled) {
             XLog.i("[诊断] 开关关闭，跳过自检")
         }
 
-        // 挂载完成后安排一次触发统计输出：用于验证 Hook 是否**真的被调用**，
-        // 而不仅仅是「挂上了」
-        XLog.timed("HookStats") { scheduleStatsReport(lpparam.classLoader) }
+        // 自检与触发统计都安排到 Telegram 启动完成之后再跑（v N1.10）：
+        // 自检要做十几轮类加载探测，其中 Thread.getAllStackTraces() 还会
+        // 挂起所有线程去取栈 —— 而这段代码在 handleLoadPackage 里是**同步**执行的，
+        // 放在这儿就等于直接加在 Telegram 的启动时间上。
+        XLog.timed("postStart") { schedulePostStartTasks(lpparam.classLoader) }
 
         val total = SystemClock.elapsedRealtime() - startedAt
-        XLog.result("性能", "挂载总耗时 ${total}ms（其中自检 ${diagCost}ms）")
+        XLog.result("性能", "挂载总耗时 ${total}ms（自检已移出启动路径，改在启动完成后后台执行）")
 
         // 这段代码在 handleLoadPackage 里同步跑，耗时直接算进 Telegram 的启动时间。
         // 超阈值时明确提示「可以关掉诊断日志来省掉这部分」—— 用户自己不会想到
@@ -120,8 +117,7 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
         if (total > SLOW_MOUNT_WARN_MS) {
             XLog.w(
                 "[性能] 挂载耗时偏长（${total}ms）。若感觉 Telegram 启动变慢，" +
-                    "可在设置里关闭「输出诊断日志」—— 自检占了 ${diagCost}ms，" +
-                    "它只服务于排查问题，日常使用不需要。"
+                    "可试着关闭「输出诊断日志」—— 它会影响启动完成后的后台自检。"
             )
         }
         XLog.i("全部模块挂载流程结束")
@@ -188,28 +184,56 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
     }
 
     /**
-     * 启动一段时间后输出 Hook 触发统计。
+     * 安排「启动完成后」才做的两件事（v N1.10）。
      *
-     * 时机选在 `Application.onCreate` 之后延迟 [HookStats.REPORT_DELAY_MS]：
-     * `handleLoadPackage` 阶段主线程 Looper 尚未就绪，无法直接 postDelayed；
-     * 而 Application.onCreate 是 Telegram 进程内最早的稳定时机。
+     * 时机选在 `Application.onCreate` 之后：`handleLoadPackage` 阶段主线程
+     * Looper 尚未就绪，无法 postDelayed；而 Application.onCreate 是该进程内
+     * 最早的稳定时机，也不挡在启动关键路径上。
+     *
+     * 两件事、以及为什么都不能留在挂载里：
+     *
+     * - **自检**：要做十几轮类加载探测，其中 `Thread.getAllStackTraces()`
+     *   还会挂起所有线程去取栈。放在 `handleLoadPackage` 里（那是**同步**执行的）
+     *   等于直接加在 Telegram 的启动时间上。这里再延后一点，并丢到后台线程。
+     * - **触发统计**：本来就需要积累一段时间才有意义。
      */
-    private fun scheduleStatsReport(classLoader: ClassLoader) {
+    private fun schedulePostStartTasks(classLoader: ClassLoader) {
         try {
             XposedHelpers.findAndHookMethod(
                 "android.app.Application", classLoader, "onCreate",
                 object : XC_MethodHook() {
                     // 刻意不包 guard：内层已有针对性的 try-catch。
-                    // 这里失败只会导致「统计不输出」，不该被计成回调异常 ——
-                    // 那会让「运行状态」里出现一条并不影响使用的噪音。
+                    // 这里失败只会导致「自检 / 统计不输出」，不该被计成回调异常 ——
+                    // 那会让「运行状态」里多出一条并不影响使用的噪音。
                     override fun afterHookedMethod(param: MethodHookParam) {
                         val app = param.thisObject as? android.app.Application ?: return
                         try {
-                            Handler(app.mainLooper).postDelayed(
+                            val handler = Handler(app.mainLooper)
+
+                            if (Prefs.diagEnabled) {
+                                handler.postDelayed({
+                                    // 后台线程执行：这些探测会挂起线程、做大量类加载，
+                                    // 不该占用刚启动完、本来就很忙的主线程
+                                    Thread {
+                                        XLog.timed("Diagnostics") {
+                                            Diagnostics.run(classLoader)
+                                        }
+                                    }.apply {
+                                        name = "TgEnhance-diag"
+                                        isDaemon = true
+                                    }.start()
+                                }, DIAG_START_DELAY_MS)
+                            }
+
+                            handler.postDelayed(
                                 { HookStats.report() },
                                 HookStats.REPORT_DELAY_MS
                             )
-                            XLog.i("[统计] 已安排 ${HookStats.REPORT_DELAY_MS / 1000} 秒后输出 Hook 触发统计")
+                            XLog.i(
+                                "[统计] 已安排启动后任务：" +
+                                    (if (Prefs.diagEnabled) "${DIAG_START_DELAY_MS}ms 后后台自检、" else "") +
+                                    "${HookStats.REPORT_DELAY_MS / 1000} 秒后输出触发统计"
+                            )
                         } catch (t: Throwable) {
                             XLog.e("[统计] 注册延迟任务失败", t)
                         }
@@ -279,5 +303,14 @@ class HookEntry : IXposedHookZygoteInit, IXposedHookLoadPackage {
 
         /** 挂载总耗时超过这个值就提示一次（ms）。 */
         const val SLOW_MOUNT_WARN_MS = 400L
+
+        /**
+         * `Application.onCreate` 之后多久开始跑自检（ms）。
+         *
+         * 不是 0：那一刻应用刚起来，主线程正忙着初始化；
+         * 也不是太久：用户可能在启动后很快就切到模块设置界面看「运行状态」，
+         * 太晚的话首屏看不到自检结果。
+         */
+        const val DIAG_START_DELAY_MS = 1_500L
     }
 }
