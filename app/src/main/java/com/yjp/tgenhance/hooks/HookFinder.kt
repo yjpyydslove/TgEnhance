@@ -69,6 +69,32 @@ object HookFinder {
     }
 
     /**
+     * 按注册表 key 定位 Hook 点（v N2.1）。
+     *
+     * 调用点不再重复写方法名与过滤条件 —— 那些只在 [HookRegistry] 里声明一次。
+     * 于是「注册表里写的」与「挂载时用的」在结构上不可能不一致，
+     * 这也正是 N2.0 建注册表的目的。
+     *
+     * **找不到 key 时返回空列表**，而不是抛异常：调用方本来就有一条
+     * `targets.isEmpty() -> HookStatus.markUnavailable(...)` 的降级路径，
+     * 走那条路比让整个挂载组挂掉安全得多。
+     * （key 写错属于编码错误，自检的注册表一致性检查会发现。）
+     */
+    fun matchByKey(cls: Class<*>, key: String): List<Method> {
+        val target = HookRegistry.find(key) ?: return emptyList()
+        return match(
+            cls,
+            explicitNames = target.names,
+            returnType = target.returnType,
+            namePrefix = target.namePrefix,
+            nameContains = target.nameContains,
+            paramCount = target.paramCount,
+            minParamCount = target.minParamCount,
+            maxParamCount = target.maxParamCount
+        )
+    }
+
+    /**
      * 先按显式名单精确命中；**只在精确名单全部落空时**，才退到特征匹配兜底。
      *
      * ### 为什么是「二选一」而不是「取并集」（v N1.3 修正）

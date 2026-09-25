@@ -117,12 +117,7 @@ object AccountHooks {
             XLog.e("[多账号] 未找到 $CLS_USER_CONFIG，作用域是否勾选了 Telegram？")
             return
         }
-        val targets = HookFinder.match(
-            cls,
-            explicitNames = listOf("getMaxAccountCount"),
-            returnType = Int::class.javaPrimitiveType,
-            nameContains = "maxaccount"
-        )
+        val targets = HookFinder.matchByKey(cls, "account.maxCount")
         if (targets.isEmpty()) {
             XLog.e("[多账号] 未定位到 getMaxAccountCount，多账号上限提升不可用")
             HookStatus.markUnavailable(Prefs.ENABLE_ACCOUNT)
@@ -264,12 +259,7 @@ object AccountHooks {
         val accountInstance = XposedHelpers.findClassIfExists(CLS_ACCOUNT_INSTANCE, classLoader) ?: return
 
         // getActivatedAccountsCount(): for (a = 0; a < MAX_ACCOUNT_COUNT; a++) —— 上界被内联为常量
-        val countTargets = HookFinder.match(
-            userConfig,
-            explicitNames = listOf("getActivatedAccountsCount"),
-            returnType = Int::class.javaPrimitiveType,
-            nameContains = "activatedaccount"
-        )
+        val countTargets = HookFinder.matchByKey(userConfig, "account.activatedCount")
         safe("getActivatedAccountsCount") {
             for (method in countTargets) {
                 HookInstaller.hookMethodQuietly(method, object : XC_MethodReplacement() {
@@ -286,12 +276,7 @@ object AccountHooks {
         }
 
         // hasPremiumOnAccounts(): 同样被常量写死，会导致高级账号状态判断不全
-        val premiumTargets = HookFinder.match(
-            userConfig,
-            explicitNames = listOf("hasPremiumOnAccounts"),
-            returnType = Boolean::class.javaPrimitiveType,
-            nameContains = "premium"
-        )
+        val premiumTargets = HookFinder.matchByKey(userConfig, "account.premiumCheck")
         safe("hasPremiumOnAccounts") {
             for (method in premiumTargets) {
                 HookInstaller.hookMethodQuietly(method, object : XC_MethodReplacement() {

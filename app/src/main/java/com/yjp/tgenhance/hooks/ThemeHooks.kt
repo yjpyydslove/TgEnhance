@@ -44,18 +44,6 @@ object ThemeHooks {
         "rmedium", "rextrabold", "rmediumitalic", "rbold", "roboto", "rmono", "mw_bold"
     )
 
-    /**
-     * Stories 查询方法精确名单（已对照官方源码逐条核对语义）。
-     *
-     * 兜底特征为「返回 boolean + 以 has 开头 + 名字含 stor」。
-     */
-    private val STORIES_QUERY_NAMES = listOf(
-        "hasStories",
-        "hasUnreadStories",
-        "hasHiddenStories",
-        "hasSelfStories",
-    )
-
     fun install(classLoader: ClassLoader) {
         XLog.section("界面与主题定制")
         XLog.i(
@@ -81,11 +69,7 @@ object ThemeHooks {
             return
         }
 
-        val targets = HookFinder.findMethods(
-            cls,
-            returnType = Typeface::class.java,
-            namePrefix = "getTypeface"
-        )
+        val targets = HookFinder.matchByKey(cls, "ui.typeface.seen")
         if (targets.isEmpty()) {
             XLog.e("[字体] AndroidUtilities 上未定位到返回 Typeface 的 getTypeface 重载")
             return
@@ -145,13 +129,7 @@ object ThemeHooks {
             return
         }
 
-        val targets = HookFinder.match(
-            cls,
-            explicitNames = STORIES_QUERY_NAMES,
-            returnType = Boolean::class.javaPrimitiveType,
-            namePrefix = "has",
-            nameContains = "stor"
-        )
+        val targets = HookFinder.matchByKey(cls, "ui.stories")
         if (targets.isEmpty()) {
             XLog.w("[Stories] 未匹配到任何查询方法，隐藏可能无效")
             return
@@ -197,11 +175,7 @@ object ThemeHooks {
             return
         }
 
-        val targets = HookFinder.match(
-            cls,
-            explicitNames = listOf("isTabletForce", "isTabletInternal"),
-            returnType = Boolean::class.javaPrimitiveType
-        )
+        val targets = HookFinder.matchByKey(cls, "ui.tablet")
         if (targets.isEmpty()) {
             XLog.w("[界面] 未定位到平板判定方法，强制平板布局不可用")
             HookStatus.markUnavailable(Prefs.FORCE_TABLET)
@@ -241,11 +215,7 @@ object ThemeHooks {
             return
         }
 
-        val targets = HookFinder.match(
-            cls,
-            explicitNames = listOf("isAppUpdateAvailable"),
-            returnType = Boolean::class.javaPrimitiveType
-        )
+        val targets = HookFinder.matchByKey(cls, "ui.updateCheck")
         if (targets.isEmpty()) {
             XLog.w("[界面] 未定位到 isAppUpdateAvailable，关闭更新提示不可用")
             HookStatus.markUnavailable(Prefs.DISABLE_UPDATE_CHECK)

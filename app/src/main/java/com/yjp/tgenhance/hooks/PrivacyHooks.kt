@@ -90,15 +90,7 @@ object PrivacyHooks {
         }
 
         // 精确名 + 特征兜底：官方把 sendTyping 改成别的名字时仍能命中
-        val targets = HookFinder.match(
-            cls,
-            explicitNames = listOf("sendTyping"),
-            returnType = Boolean::class.javaPrimitiveType,
-            nameContains = "typing",
-            // sendTyping 至少带 dialogId + threadId + action 三个参数；
-            // 加下限是为了排除同名但签名不同的辅助方法
-            minParamCount = 3
-        )
+        val targets = HookFinder.matchByKey(cls, "privacy.typing")
         if (targets.isEmpty()) {
             XLog.w("[隐私] 未定位到 sendTyping，隐藏输入状态不可用")
             HookStatus.markUnavailable(Prefs.HIDE_TYPING)
@@ -142,12 +134,7 @@ object PrivacyHooks {
 
         // 精确名 + 特征兜底。注意不能按返回类型约束 —— 其多个重载返回值不同，
         // 这里只要求名字里含 deleteMessage，再在回调里自行判据
-        val targets = HookFinder.match(
-            cls,
-            explicitNames = listOf("deleteMessages"),
-            nameContains = "deletemessage",
-            minParamCount = 2
-        )
+        val targets = HookFinder.matchByKey(cls, "privacy.deleteMessages")
         if (targets.isEmpty()) {
             XLog.w("[隐私] 未定位到 deleteMessages，防撤回不可用")
             HookStatus.markUnavailable(Prefs.ANTI_RECALL)
@@ -361,11 +348,7 @@ object PrivacyHooks {
         }
         localeControllerClass = cls
 
-        val targets = HookFinder.findMethods(
-            cls,
-            returnType = String::class.java,
-            namePrefix = "formatUserStatus"
-        )
+        val targets = HookFinder.matchByKey(cls, "privacy.peerOnline")
         if (targets.isEmpty()) {
             XLog.w("[隐私] 未定位到 formatUserStatus，隐藏对方在线状态不可用")
             HookStatus.markUnavailable(Prefs.HIDE_PEER_ONLINE)
@@ -441,12 +424,7 @@ object PrivacyHooks {
             return
         }
 
-        val targets = HookFinder.match(
-            cls,
-            explicitNames = listOf("format"),
-            returnType = String::class.java,
-            paramCount = 1
-        )
+        val targets = HookFinder.matchByKey(cls, "privacy.phoneMask")
         if (targets.isEmpty()) {
             XLog.w("[隐私] 未定位到 PhoneFormat.format(String)，隐藏手机号不可用")
             HookStatus.markUnavailable(Prefs.HIDE_PHONE)

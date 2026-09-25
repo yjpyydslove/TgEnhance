@@ -1389,6 +1389,53 @@ N2 开篇不做新功能，先还一笔债。
 
 ---
 
+### N2.1 —— 挂载点也走注册表
+
+N2.0 让**自检**从注册表派生，这一版把**挂载**也接上。
+
+各 `*Hooks.kt` 里原本写着一长串定位参数：
+
+```kotlin
+HookFinder.match(
+    cls,
+    explicitNames = listOf("sendTyping"),
+    returnType = Boolean::class.javaPrimitiveType,
+    nameContains = "typing",
+    minParamCount = 3
+)
+```
+
+现在统一成一行：
+
+```kotlin
+HookFinder.matchByKey(cls, "privacy.typing")
+```
+
+**11 处全部改完**，条件只在注册表里存在一份。「注册表里写的」与「挂载时用的」
+从此不可能不一致 —— 这正是 N2.0 建注册表要解决的问题。
+
+新增的 `HookFinder.matchByKey(cls, key)` 在找不到 key 时**返回空列表**而不是抛异常：
+调用方本来就有一条「定位不到 → 标记功能不可用」的降级路径，走那条比让整个挂载组挂掉安全得多。
+
+**顺手清理**：`ThemeHooks` 里的 `STORIES_QUERY_NAMES` 常量随之下线（内容已进注册表）。
+
+**三处暂未统一，都写清了原因** —— 不是遗漏，是条件确实比注册表现在能表达的更细：
+
+| 位置 | 为什么 |
+|---|---|
+| `canDownloadMedia` | 还要按**参数类型**过滤（只取 `MessageObject` 那个重载，另一个 `(int, long)` 是预设判断，不在功能范围内） |
+| `AccountInstance.getInstance` | 还要要求**静态**、且参数是 `int` |
+| `HookEntry` 的 `onResume/onPause` | 用 `hookAllByName` 按名挂载，本身就是「挂全部重载」的语义 |
+
+**检查脚本随之改造。** 原来那个「自检清单覆盖检查」的意义变了 ——
+挂载与自检都来自注册表，天然一致。改成查**有没有人绕过注册表**：
+
+- 有没有残留的裸 `HookFinder.match(...)` 调用（应为零）；
+- `matchByKey` 用到的 key 是否都真实存在（拼错会安静失效，功能没了却不报错）；
+- 反向提示：注册表里声明了却既没按 key 定位、也没有同名 `hookAllByName` 的 key。
+
+---
+
 ## 常见问题
 
 **「运行状态」里某项显示「未触发」，是坏了吗？**

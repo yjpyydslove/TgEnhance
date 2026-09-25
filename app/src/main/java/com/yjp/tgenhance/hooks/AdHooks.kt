@@ -65,11 +65,7 @@ object AdHooks {
             return
         }
 
-        val targets = HookFinder.match(
-            cls,
-            explicitNames = listOf("getSponsoredMessages"),
-            nameContains = "sponsored"
-        )
+        val targets = HookFinder.matchByKey(cls, "ads.sponsored.blocked")
         if (targets.isEmpty()) {
             XLog.w("[广告] 未定位到 getSponsoredMessages，广告屏蔽不可用")
             HookStatus.markUnavailable(Prefs.BLOCK_SPONSORED)

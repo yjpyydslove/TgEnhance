@@ -267,6 +267,9 @@ object HookRegistry {
             owner = TargetOwner.FIXED,
             className = "org.telegram.messenger.LocaleController",
             names = listOf("formatUserStatus"),
+            // 必须限定返回 String：LocaleController 上有若干同名/近名方法，
+            // 只有返回可读文本的那个才是要替换的（v N2.1 从调用点搬过来）
+            returnType = java.lang.String::class.java,
             featureKey = Prefs.HIDE_PEER_ONLINE
         ),
         HookTarget(

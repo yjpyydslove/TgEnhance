@@ -51,11 +51,7 @@ object NetworkHooks {
             return
         }
 
-        val targets = HookFinder.match(
-            cls,
-            explicitNames = listOf("checkProxy"),
-            nameContains = "checkproxy"
-        )
+        val targets = HookFinder.matchByKey(cls, "net.proxyProbe")
         if (targets.isEmpty()) {
             XLog.w("[网络] 未定位到 checkProxy，代理探测防护不可用")
             HookStatus.markUnavailable(Prefs.BLOCK_PROXY_PROBE)
