@@ -13,7 +13,13 @@ val keystoreFile = rootProject.file("keystore/tgenhance.p12")
 
 android {
     namespace = "com.yjp.tgenhance"
-    compileSdk = 35
+
+    // v N1.16：编译目标升到 Android 16（API 36）。
+    //
+    // 升 compileSdk 只影响「编译期能用哪些 API」，不改变运行期行为 ——
+    // 真正决定行为的是 targetSdk（见下方，**仍然保持 35**）。
+    // 升上来是为了能用 API 36 的符号，也让「支持到 Android 16」有依据。
+    compileSdk = 36
 
     signingConfigs {
         if (keystoreFile.exists()) {
@@ -30,7 +36,19 @@ android {
     defaultConfig {
         applicationId = "com.yjp.tgenhance"
         minSdk = 26
+
+        // targetSdk **刻意停在 35**（v N1.16）。
+        //
+        // 它决定运行期按哪一版的规则对待本应用。升到 36 会一次性引入两条
+        // 行为变更：edge-to-edge 不能再退出、预测性返回强制启用
+        // （`onBackPressed` 不再被调用）。本模块目前不依赖旧返回机制、
+        // 也已自行处理 insets，**技术上能升**；但没有收益 —— 这两条变更
+        // 对「一个设置界面 + 若干个 Hook」来说只是多两个要照顾的分支。
+        //
+        // 什么时候该升：Google 要求新应用 targetSdk 不低于某版本、
+        // 或需要用到只在 36+ 生效的 API 时。那天记得回来重新评估上面两条。
         targetSdk = 35
+
         versionCode = appVersionCode
         versionName = appVersionName
     }

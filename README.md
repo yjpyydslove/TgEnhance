@@ -1261,6 +1261,43 @@ insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCuto
 
 ---
 
+### N1.16 —— 编译目标升到 Android 16（API 36）
+
+`compileSdk` 从 35 升到 36。**但 `targetSdk` 刻意停在 35** —— 这两件事要分开看：
+
+| | 作用 | 本次 |
+|---|---|---|
+| `compileSdk` | 编译期能用哪些 API | 35 → **36** |
+| `targetSdk` | 运行期按哪一版的规则对待本应用 | 保持 **35** |
+
+升 `compileSdk` 是纯收益：能引用 API 36 的符号，也让「支持到 Android 16」有依据。
+升 `targetSdk` 则会一次性引入两条行为变更（edge-to-edge 不能再退出、
+预测性返回强制启用）—— 技术上本模块扛得住（没重写 `onBackPressed`、
+也自行处理了 insets），但**没有收益**，只是多两个要照顾的分支。
+所以留在 35，并在 `build.gradle.kts` 里写明了「什么时候该升」。
+
+**这中间撞上一条版本链。** 一开始只改了 `compileSdk`，随后发现：
+
+> `compileSdk = 36` 要求 **AGP ≥ 8.9.0**（更早的 AGP 压根不知道 Android 16 存在）
+> → 而 AGP 8.9 又要求 **Gradle ≥ 8.11.1**
+
+项目原本是 AGP 8.7.3 + Gradle 8.9，两个都不够。这是**链式的，缺一环构建就停**。
+于是三个一起动：
+
+| 组件 | 原 | 新 |
+|---|---|---|
+| `compileSdk` | 35 | 36 |
+| AGP | 8.7.3 | 8.9.1 |
+| Gradle（CI） | 8.9 | 8.11.1 |
+
+CI 里安装的 SDK 组件同步换成 `platforms;android-36` + `build-tools;36.0.0`
+（推之前先查过 Google 的 SDK 仓库清单，确认这两个包确实存在，免得白跑一轮 CI）。
+
+升 AGP 的常见副作用也提前排查了：本模块**不用 `BuildConfig`**，
+而 AGP 8.x 起该特性默认关闭 —— 不受影响。
+
+---
+
 ## 常见问题
 
 **「运行状态」里某项显示「未触发」，是坏了吗？**
