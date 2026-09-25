@@ -4,6 +4,7 @@ import android.app.AndroidAppHelper
 import android.content.Intent
 import com.yjp.tgenhance.Prefs
 import com.yjp.tgenhance.XLog
+import com.yjp.tgenhance.core.Features
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -79,6 +80,19 @@ object DiagBridge {
                 }
                 append('\n')
             }
+        }
+
+        // 运行期才发现的不可用项（v N1.8）：自检报告是挂载期算一次就缓存的，
+        // 而有些失败要等用户真的操作过才知道 —— 例如设置页入口的锚点判据，
+        // 得等他打开 Telegram 设置页、列表填好之后才能判断。
+        // 这些补在最后，格式与自检项一致，设置界面不用改就能显示出来。
+        for (key in Diagnostics.newlyUnavailable()) {
+            append(DiagProtocol.MARK_MISS)
+            append("可用性").append('#')
+            append("运行期发现：")
+            append(Features.find(key)?.title ?: key)
+            append(" 在当前客户端不可用")
+            append('\n')
         }
     }
 }

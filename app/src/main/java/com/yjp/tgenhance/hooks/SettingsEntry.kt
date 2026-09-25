@@ -133,10 +133,15 @@ object SettingsEntry {
         )
 
         if (fillHooked == 0 || clickHooked == 0) {
+            // 挂载不完整 = 功能实际不可用，必须让它在「运行状态」里露面。
+            // 只写日志的话，用户看到的是「入口没出现」，
+            // 而自检与可用性列表都是干净的 —— 正是本模块一直在避免的静默失败。
+            HookStatus.markUnavailable(Prefs.SETTINGS_ENTRY)
             XLog.w(
-                "[设置入口] 挂载不完整（fillItems=$fillHooked, onClick=$clickHooked），" +
-                    "入口可能不出现或点了没反应"
+                "[设置入口] 挂载不完整（fillItems=$fillHooked, onClick=$clickHooked）：" +
+                    "入口不会出现或点了没反应，已标记为当前客户端不可用"
             )
+            return
         }
         XLog.result(
             "设置入口",
@@ -172,6 +177,11 @@ object SettingsEntry {
         // 找不到就说明这个客户端的结构和我们预期不同，整体放弃 ——
         // 入口不出现只是少个便利，插错列表却是设置页直接打不开。
         if (items.none { idOf(it) == ANCHOR_ACCOUNT_ITEM_ID }) {
+            // 这一条是**运行期**才发现的：要等用户打开 Telegram 设置页、
+            // 列表填好之后才能判断。所以它赶不上启动时生成的自检报告 ——
+            // 但必须让它在「可用性」里露面，否则用户只看到「入口没出现」，
+            // 没有任何地方说明原因。
+            HookStatus.markUnavailable(Prefs.SETTINGS_ENTRY)
             if (!anchorWarned) {
                 anchorWarned = true
                 XLog.w("[设置入口] 未找到设置主页锚点项，本次不插入（入口不可用，其余功能正常）")

@@ -126,8 +126,35 @@ object Diagnostics {
     @Volatile
     private var lastReport: List<CheckItem> = emptyList()
 
+    /**
+     * 最近一次自检报告覆盖到的不可用项（v N1.8）。
+     *
+     * 用来和当前的 [HookStatus] 求差，找出「报告生成之后才出现的」那些 ——
+     * 见 [newlyUnavailable]。
+     */
+    @Volatile
+    private var reportedUnavailable: Set<String> = emptySet()
+
     /** 最近一次自检结果；未执行过时为空列表。 */
     fun report(): List<CheckItem> = lastReport
+
+    /**
+     * 自检报告生成**之后**才出现的不可用项（v N1.8）。
+     *
+     * 有些失败只有运行期才知道 —— 典型的是注入 Telegram 设置页时的锚点判据：
+     * 要等用户真的打开设置页、列表被填好之后才能判断。而自检报告是挂载期
+     * 算一次就缓存住的，这类问题**永远进不去**报告。
+     *
+     * 于是这里拿报告覆盖到的范围求差，把之后新增的单独报出来，
+     * 让「这个功能为什么没出现」有地方可查，而不是只剩日志里的一行。
+     *
+     * 返回的是配置 key（面向程序），[DiagBridge] 回传时会翻成功能标题。
+     */
+    fun newlyUnavailable(): List<String> = try {
+        HookStatus.unavailableKeys().filterNot { reportedUnavailable.contains(it) }
+    } catch (t: Throwable) {
+        emptyList()
+    }
 
     fun run(classLoader: ClassLoader) {
         XLog.section("诊断报告开始")
@@ -184,6 +211,10 @@ object Diagnostics {
         // 有问题的项排前面：自检结果动辄十几行，没人会逐行读完，
         // 把「需要处理的」顶到最上面，比按类别整齐排列更有用
         lastReport = items.sortedBy { if (it.ok) 1 else 0 }
+        // 记下这份报告已经覆盖到的不可用项。之后运行期才发现的（例如设置页
+        // 入口的锚点判据，要等用户打开 Telegram 设置页才知道）不在其中，
+        // 由 [newlyUnavailable] 单独补报。
+        reportedUnavailable = HookStatus.unavailableKeys().toSet()
 
         val okCount = items.count { it.ok }
         val classMissing = items.count { !it.ok && it.member == MISSING_CLASS }
