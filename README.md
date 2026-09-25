@@ -1133,6 +1133,45 @@ N1.1 写 `LauncherIcon.apply()` 时留了句话：
 
 ---
 
+### N1.13 —— 设置页入口改成原生样式
+
+N1.4 把入口插进了 Telegram 设置页，用的是 `UItem.asSettingsCell` —— 纯文字行。
+可设置页里**每一行都带左侧彩色圆角图标块**，我们那行混在里面明显「少一块」。
+
+**先把类找对。** 之前试着下载 `org/telegram/ui/SettingCell.java` 一直 404，
+直到列出 `ui/` 目录（231 个文件）才发现：**`SettingCell` 根本不是独立文件**，
+它是 `SettingsActivity` 的**内部静态类**，全名
+`org.telegram.ui.SettingsActivity$SettingCell`。按独立文件找当然找不到。
+
+拿到签名后：
+
+```java
+public static UItem of(int id, int iconColorTop, int iconColorBottom,
+                       int icon, CharSequence title, CharSequence subtitle)
+```
+
+**改法：优先走原生那条路，失败再退回。**
+
+| 路径 | 效果 |
+|---|---|
+| `SettingCell.Factory.of(...)` | 与 Telegram 自己的设置项**同款**：彩色圆角图标块 + 标题 + 副标题 |
+| `UItem.asSettingsCell(...)`（退回） | 纯文字行 |
+
+第 2 条不是凑数的备用方案：`SettingCell` 是内部类，fork 把它搬走、
+或者改掉 `of` 的签名都是可能的 —— 那种情况下能显示一行可点的文字，
+也比完全没有入口强。
+
+**顺手解决图标从哪来。** 不能引用本模块的图标资源 —— 资源 id 是**按包独立**的，
+拿到宿主进程里毫无意义。改为按名字查宿主自己的 drawable
+（`settings_features` → `settings_ask` → `settings_faq` 依次尝试），
+取到后缓存（`getIdentifier` 是查表操作，不该放高频路径）。
+底色用 Telegram 自己的 `IconBackgroundColors.BLUE` 色值，
+正好与设置页第一项「账号」同色。
+
+都取不到也不影响使用：条目照常显示、照常可点，只是没有图标块。
+
+---
+
 ## 常见问题
 
 **「运行状态」里某项显示「未触发」，是坏了吗？**

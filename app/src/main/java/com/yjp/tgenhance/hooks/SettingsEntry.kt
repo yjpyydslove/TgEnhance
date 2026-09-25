@@ -80,6 +80,43 @@ object SettingsEntry {
     private const val ENTRY_TITLE = "模块设置"
     private const val ENTRY_SUBTITLE = "打开增强模块选项"
 
+    /**
+     * Telegram 原生的设置条目工厂（v N1.13）。
+     *
+     * 它是 `SettingsActivity` 的**内部静态类**，所以不能按独立文件去找 ——
+     * 类名必须带 `$`。用它造出来的条目与 Telegram 自己的设置项**完全同款**：
+     * 左侧一个彩色圆角图标块，右侧标题 + 副标题。
+     *
+     * 找不到时退回 `UItem.asSettingsCell`（纯文字行，不带图标块）——
+     * 能显示，只是视觉上朴素一些。
+     */
+    private const val CLS_SETTING_CELL_FACTORY =
+        "org.telegram.ui.SettingsActivity\$SettingCell\$Factory"
+
+    /**
+     * 图标底色，取自 Telegram 自己的 `IconBackgroundColors.BLUE`。
+     *
+     * 那个枚举是宿主的编译期常量，我们引用不到，只能照抄色值。
+     * 用蓝色是因为它正好也是设置页第一项「账号」的底色，观感统一。
+     */
+    private const val ICON_COLOR_TOP = 0xFF1CA5ED.toInt()
+    private const val ICON_COLOR_BOTTOM = 0xFF1488E1.toInt()
+
+    /**
+     * 图标候选名，从 Telegram 自己的 drawable 里挑。
+     *
+     * 不能引用本模块的图标资源 —— 资源 id 是**每包独立**的，
+     * 拿到宿主进程里没有任何意义。所以按名字查宿主自己的 drawable，
+     * 取第一个存在的；都找不到就传 0（条目照常可用，只是少个图标块）。
+     */
+    private val ICON_CANDIDATES = listOf(
+        "settings_features", "settings_ask", "settings_faq"
+    )
+
+    /** 查过的图标资源 id；null 表示还没查过。 */
+    @Volatile
+    private var cachedIconRes: Int? = null
+
     /** 「锚点找不到」这件事只报一次，避免每次刷新设置页都刷一行日志。 */
     @Volatile
     private var anchorWarned = false
@@ -107,6 +144,16 @@ object SettingsEntry {
         // asSettingsCell 有三个重载，取带副标题的四参版本
         val asSettingsCell = findFactory(uItemCls, "asSettingsCell", 4)
 
+        // 更接近原生的那一套：SettingCell.Factory.of 造出来的条目与 Telegram
+        // 自己的设置项同款（左侧彩色圆角图标块）。拿不到也不要紧 ——
+        // 下面会退回 asSettingsCell，只是朴素一些（v N1.13）
+        val factoryOf = XposedHelpers
+            .findClassIfExists(CLS_SETTING_CELL_FACTORY, classLoader)
+            ?.let { findFactory(it, "of", 6) }
+        if (factoryOf == null) {
+            XLog.i("[设置入口] 未找到原生 SettingCell.Factory.of，入口将用纯文本样式")
+        }
+
         if (asHeader == null || asSettingsCell == null) {
             XLog.w(
                 "[设置入口] 该客户端的 UItem 缺少 asHeader / asSettingsCell " +
@@ -120,7 +167,7 @@ object SettingsEntry {
         val fillHooked = HookInstaller.hookAllByName(
             settingsCls, "fillItems", object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
-                    guard("设置页入口") { inject(param, asHeader, asSettingsCell) }
+                    guard("设置页入口") { inject(param, asHeader, asSettingsCell, factoryOf) }
                 }
             }
         )
@@ -160,7 +207,12 @@ object SettingsEntry {
      * 放这既不打断中间的分组，也不需要理解每个分组各自的颜色搭配。
      */
     @Suppress("UNCHECKED_CAST")
-    private fun inject(param: MethodHookParam, asHeader: Method, asSettingsCell: Method) {
+    private fun inject(
+        param: MethodHookParam,
+        asHeader: Method,
+        asSettingsCell: Method,
+        factoryOf: Method?
+    ) {
         if (!Prefs.settingsEntry) return
 
         val items = param.args.getOrNull(0) as? ArrayList<Any?> ?: return
@@ -190,9 +242,7 @@ object SettingsEntry {
         }
 
         val header = asHeader.invoke(null, HEADER_TEXT) ?: return
-        val cell = asSettingsCell.invoke(
-            null, ENTRY_ID, 0, ENTRY_TITLE, ENTRY_SUBTITLE
-        ) ?: return
+        val cell = buildEntry(factoryOf, asSettingsCell) ?: return
 
         val shadowIndex = items.indexOfLast { viewTypeOf(it) == VIEW_TYPE_CUSTOM_SHADOW }
         if (shadowIndex >= 0) {
@@ -265,6 +315,59 @@ object SettingsEntry {
         cls.declaredMethods.firstOrNull { it.name == name && it.parameterCount == paramCount }
     } catch (t: Throwable) {
         null
+    }
+
+    /**
+     * 造出要插入的那一行（v N1.13）。
+     *
+     * 两条路，优先走原生那条：
+     *
+     *  1. `SettingCell.Factory.of(id, topColor, bottomColor, icon, title, subtitle)`
+     *     —— 与 Telegram 自己的设置项同款，左侧有彩色圆角图标块；
+     *  2. `UItem.asSettingsCell(id, icon, text, value)` —— 纯文字行。
+     *
+     * 第 2 条不是「凑数的备用方案」：`SettingCell` 是 `SettingsActivity`
+     * 的**内部类**，fork 把它搬走、或改掉 `of` 的签名都是可能的 ——
+     * 那种情况下能显示一行可点的文字，也比完全没有入口强。
+     */
+    private fun buildEntry(factoryOf: Method?, asSettingsCell: Method): Any? {
+        if (factoryOf != null) {
+            try {
+                factoryOf.invoke(
+                    null, ENTRY_ID, ICON_COLOR_TOP, ICON_COLOR_BOTTOM,
+                    entryIconRes(), ENTRY_TITLE, ENTRY_SUBTITLE
+                )?.let { return it }
+            } catch (t: Throwable) {
+                XLog.w("[设置入口] 原生样式构造失败，退回纯文本样式：${t.message}")
+            }
+        }
+        return asSettingsCell.invoke(null, ENTRY_ID, 0, ENTRY_TITLE, ENTRY_SUBTITLE)
+    }
+
+    /**
+     * 取一个宿主可用的图标资源 id，取到后缓存。
+     *
+     * `Resources.getIdentifier` 是按名字查表，官方不建议放在高频路径上 ——
+     * 但这里只在设置页第一次填充时查一次，之后走 [cachedIconRes]。
+     * 查不到就返回 0：条目照常显示，只是左上角没有图标块。
+     */
+    private fun entryIconRes(): Int {
+        cachedIconRes?.let { return it }
+        val id = try {
+            val app = AndroidAppHelper.currentApplication()
+            if (app == null) {
+                0
+            } else {
+                ICON_CANDIDATES.firstNotNullOfOrNull { name ->
+                    app.resources.getIdentifier(name, "drawable", app.packageName)
+                        .takeIf { it != 0 }
+                } ?: 0
+            }
+        } catch (t: Throwable) {
+            0
+        }
+        cachedIconRes = id
+        return id
     }
 
     /**
