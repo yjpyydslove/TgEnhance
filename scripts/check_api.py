@@ -4,12 +4,20 @@
 
 本机没有 Kotlin 编译器，`HookFinder.match(... paramCount = 1)` 这种
 「方法没这个参数」的错误只能在 CI 暴露，一轮几分钟。
-这个脚本把项目内自定义 API 的参数白名单硬编码下来，做一次静态比对。
 
-只覆盖「自己写的、参数名固定」的几个工具函数 —— 标准库不查。
+### v N2.6：参数白名单不再手写，改为从源码推导
 
-v N2.5 起本脚本随仓库走（原来放在本机临时目录），CI 会在编译前跑它。
-退出码：0 无问题；1 有问题（白名单落后于代码时记得同步这里）。
+原来那张表是手工维护的。N2.1 加了 `HookFinder.matchByKey` 却忘了同步白名单 ——
+方法进了仓库、白名单留在原地，两边各自走，检查形同虚设。
+这已经是本项目**第三次**栽在「同一份信息两处维护」上（前两次：挂载点 vs
+自检清单、自检判定 vs HookFinder 过滤条件）。
+
+现在的做法：扫描源码里 `object Xxx { fun yyy(a: T, b: T) }` 的定义，
+自动生成「`Xxx.yyy` -> 参数名集合」。**新方法加进来自动生效**，
+不需要有人记得同步白名单。
+
+只覆盖「自己写的、参数名固定」的工具函数 —— 标准库不查。
+退出码：0 无问题；1 有问题。
 """
 import os
 import re
@@ -17,41 +25,16 @@ import sys
 
 ROOT = sys.argv[1] if len(sys.argv) > 1 else "app/src/main/java"
 
-# 工具方法 -> 允许的参数名集合
-API = {
-    "HookFinder.match": {"cls", "explicitNames", "returnType", "namePrefix", "nameContains", "paramCount", "minParamCount", "maxParamCount"},
-    "HookFinder.matchByKey": {"cls", "key"},
-    "HookFinder.findMethods": {"cls", "returnType", "namePrefix", "nameContains", "paramCount", "publicOnly"},
-    "HookInstaller.hookAllByName": {"cls", "methodName", "callback"},
-    "HookInstaller.hookMethodQuietly": {"method", "callback"},
-    "HookStats.expect": set(),        # vararg，不按名字传
-    "HookStats.hit": {"name"},
-    "HookStatus.markUnavailable": {"featureKey"},
-    "HookStatus.markGroupFailed": {"group"},
-    "ClientProfileDetector.detect": {"classLoader", "packageName"},
-    "XLog.timed": {"scope", "block"},
-    "XLog.safe": {"scope", "block"},
-    "XLog.guard": {"scope", "block"},
-    "XLog.result": {"scope", "detail"},
-    "XLog.banner": {"pkg", "version"},
+# 需要「必须按名字传」的方法才列在这里（默认上限 = 该方法的参数个数，
+# 即只检出「传得比定义还多」的情况）。一般不填。
+POSITIONAL_LIMIT_OVERRIDE = {
+    # "HookStats.hit": 1,
 }
 
-# 允许省略的位置参数上限（前 N 个可以不写名字）
-POSITIONAL_LIMIT = {
-    "XLog.result": 2,
-    "XLog.banner": 2,
-    "XLog.safe": 2,
-    "XLog.guard": 2,
-    "XLog.timed": 2,
-    "HookStats.hit": 1,
-    "HookFinder.match": 1,
-    "HookFinder.matchByKey": 2,
-    "HookFinder.findMethods": 1,
-    "HookInstaller.hookAllByName": 3,
-    "HookInstaller.hookMethodQuietly": 2,
-    "HookStatus.markUnavailable": 1,
-    "HookStatus.markGroupFailed": 1,
-    "ClientProfileDetector.detect": 2,
+# 推导不出、或推导结果需要修正的极少数情况。
+# 空集合表示「这个方法不按名字传，跳过参数名检查」（如 vararg）。
+API_OVERRIDE = {
+    # "Xxx.yyy": {"a", "b"},
 }
 
 
@@ -89,16 +72,120 @@ def split_top_level(args):
     return [p.strip() for p in parts if p.strip()]
 
 
+def strip_comments(src):
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    return re.sub(r"//[^\n]*", "", src)
+
+
+def strip_templates(src):
+    """去掉 Kotlin 字符串模板 `${...}`（内部可能还嵌着引号）。"""
+    out = []
+    i = 0
+    while i < len(src):
+        if src.startswith("${", i):
+            depth, j = 0, i + 1          # i+1 指向 '{'
+            while j < len(src):
+                if src[j] == "{":
+                    depth += 1
+                elif src[j] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            out.append(" ")
+            i = j + 1
+        else:
+            out.append(src[i])
+            i += 1
+    return "".join(out)
+
+
+def strip_strings(src):
+    """
+    把字符串字面量掏空。
+
+    不处理的话会有两类误报：
+    1. 日志插值被当成命名参数 ——
+       `XLog.i("完成, modulePath=${x}")` 里的 `modulePath=` 会被判成
+       `XLog.i(modulePath = ...)`，而 XLog.i 没这个参数。
+    2. 模板里嵌套引号 ——
+       `XLog.w("...：${list.joinToString("、")}")` 会让简单的引号配对
+       正则切错，把一行变成两个「参数」。
+
+    （v N2.6 自动推导后才暴露：推导把 XLog 也纳了进来，
+      旧白名单只覆盖少数几个方法，恰好避开了这些日志行。）
+    """
+    src = strip_templates(src)
+    src = re.sub(r'"""(?:[^"]|"(?!""))*"""', '""', src, flags=re.S)
+    return re.sub(r'"(?:[^"\\\n]|\\.)*"', '""', src)
+
+
+def iter_kt(root):
+    for dirpath, _dirs, files in os.walk(root):
+        for name in files:
+            if name.endswith(".kt"):
+                yield os.path.join(dirpath, name)
+
+
+def parse_param_names(params_str):
+    """从参数定义串里取出每个参数的名字。"""
+    names = []
+    for part in split_top_level(params_str):
+        part = part.split("=", 1)[0]           # 去掉默认值
+        part = re.sub(r"\bvararg\b", "", part).strip()
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)", part)
+        if m:
+            names.append(m.group(1))
+    return names
+
+
+def build_api():
+    """
+    从源码推导 {`Obj.method`: 参数名集合}。
+
+    `fun` 归属于它前面最近的 `object` 声明 —— 本项目里工具类都是
+    `object`，归属错了最多让白名单宽松一点，不会误报。
+    """
+    api = {}
+    for path in iter_kt(ROOT):
+        src = strip_strings(strip_comments(open(path, encoding="utf-8").read()))
+        objects = [(m.start(), m.group(1))
+                   for m in re.finditer(r"\bobject\s+([A-Za-z_]\w*)", src)]
+        if not objects:
+            continue
+        for m in re.finditer(r"\bfun\s+([A-Za-z_]\w*)\s*\(", src):
+            owner = None
+            for pos, name in objects:
+                if pos < m.start():
+                    owner = name
+                else:
+                    break
+            if owner is None:
+                continue
+            args = extract_args(src, m.end())
+            api.setdefault(f"{owner}.{m.group(1)}", set()).update(
+                parse_param_names(args)
+            )
+    for key, names in API_OVERRIDE.items():
+        api[key] = set(names)
+    return api
+
+
+API = build_api()
+
+print("=" * 60)
+print(f"从源码推导出 {len(API)} 个方法签名")
+if "--verbose" in sys.argv:
+    for key in sorted(API):
+        print(f"    {key}({', '.join(sorted(API[key]))})")
+
 problems = 0
 for dirpath, _dirs, files in os.walk(ROOT):
     for name in files:
         if not name.endswith(".kt"):
             continue
         path = os.path.join(dirpath, name)
-        src = open(path, encoding="utf-8").read()
-        # 去注释，避免注释里的示例代码被误判
-        src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
-        src = re.sub(r"//[^\n]*", "", src)
+        src = strip_strings(strip_comments(open(path, encoding="utf-8").read()))
 
         for api, allowed in API.items():
             for m in re.finditer(re.escape(api) + r"\s*\(", src):
@@ -117,8 +204,8 @@ for dirpath, _dirs, files in os.walk(ROOT):
                             problems += 1
                     else:
                         positional += 1
-                limit = POSITIONAL_LIMIT.get(api, 0)
-                if positional > limit and allowed:
+                limit = POSITIONAL_LIMIT_OVERRIDE.get(api, len(allowed))
+                if positional > limit:
                     line = src[:m.start()].count("\n") + 1
                     print(f"TOO MANY POSITIONAL  {path}:{line}")
                     print(f"    {api} 收到 {positional} 个位置参数（上限 {limit}）")
