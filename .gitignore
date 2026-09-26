@@ -11,3 +11,7 @@ captures/
 # 签名密钥不再入库（v N2.2）—— 原来连同密码公开在仓库里，
 # 任何人拿到都能签一个能覆盖升级的假包。现在由 CI Secret 注入。
 keystore/
+
+# 上游 Telegram 源码的下载缓存（v N2.10）。
+# `scripts/check_hookpoints_upstream.py` 用它避免重复下载，几 MB 且随时可重建。
+.cache/

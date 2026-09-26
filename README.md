@@ -326,6 +326,20 @@ python3 scripts/check_apk.py app/build/outputs/apk/release/TgEnhance-*.apk
 `check_apk.py` 查的是「编译成功但装上去不能用」那类问题 ——
 缺 `assets/xposed_init`、manifest 少 xposed 元数据等。
 
+### Telegram 升级后跑一次
+
+```bash
+python3 scripts/check_hookpoints_upstream.py              # 对照上游 master
+python3 scripts/check_hookpoints_upstream.py --ref 11.14.0 # 或某个具体版本
+```
+
+它拿注册表里的 Hook 点去对一遍 Telegram 源码，看那些方法还在不在。
+官方一改名，对应功能就**静默失效**（编译照过、安装照常，只是不起作用）——
+这是本模块最难发现的一类故障，人工核对做一次就过期。
+
+脚本只回答「方法还在不在」，**打印出找到的定义行**让人确认语义是否还一样。
+源码缓存在 `.cache/tg-src`（不进仓库），`--refresh` 可强制重新下载。
+
 ---
 
 ## 安装
