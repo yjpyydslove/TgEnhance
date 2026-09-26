@@ -75,6 +75,21 @@ jobs:
           # 与 AGP 一起动（少了这一步会直接报版本不匹配）。
           gradle-version: '8.11.1'
 
+      - name: 静态检查
+        run: |
+          # v N2.5：五项检查进 CI。
+          #
+          # 这些检查原本只靠「发版前手动记得跑」—— 忘了就漏过去，
+          # 等 CI 编译阶段才暴露（import 缺失）或根本暴露不了
+          # （注册表不一致、摆设开关这类「编译能过但功能不对」的问题）。
+          # 脚本随仓库走（scripts/），有退出码，任何一项不过整个 job 失败。
+          set -e
+          python3 scripts/check_kotlin_imports.py app/src/main/java
+          python3 scripts/check_api.py .
+          python3 scripts/check_hook_guard.py app/src/main/java
+          python3 scripts/check_selfcheck_coverage.py --root .
+          python3 scripts/check_registry_consistency.py --root .
+
       - name: 编译 Release APK
         run: gradle assembleRelease --no-daemon --stacktrace
         env:

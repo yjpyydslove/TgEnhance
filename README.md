@@ -1527,6 +1527,54 @@ HookFinder.matchByKey(cls, "privacy.typing")
 
 ---
 
+### N2.5 —— 五项静态检查进 CI
+
+这一版不改功能，改的是**安全网的性质**：从「发版前记得手动跑」变成
+「CI 强制跑」。
+
+之前的状态有两个问题：
+
+1. **靠记忆**。五项检查（imports / 结构 / 回调防护 / 注册表契约 /
+   注册表一致性）都靠发版前手动跑一遍 —— 忘了就漏过去。
+   其中「imports 缺失」要等 CI 编译阶段才暴露，浪费一轮；
+   而「注册表不一致」「摆设开关」这类问题**编译照样过**，漏了就是漏了。
+2. **靠运气**。其中一个脚本（`check_api.py`）一直躺在作者本机的
+   **临时目录**里 —— 系统清理一下就没了，等于安全网少一根桩。
+
+现在 5 个脚本全部收进仓库 `scripts/`：
+
+| 脚本 | 查什么 | 加入版本 |
+|---|---|---|
+| `check_kotlin_imports.py` | 用了但没 import | 早期 |
+| `check_api.py` | 内部工具方法参数名 + 结构完整性 | v5.x |
+| `check_hook_guard.py` | 回调异常防护 | N1.5 |
+| `check_selfcheck_coverage.py` | 注册表契约（无人绕过） | N1.7 / N2.1 |
+| `check_registry_consistency.py` | 注册表引用一致性 | N1.17 |
+
+CI 在**编译之前**跑全部五项，任何一项不过整个 job 失败 ——
+一两分钟就能看到结论，而不是等编译完才发现。
+
+**搬迁时顺带发现白名单落后于代码**：`HookFinder.matchByKey` 是 N2.1 加的，
+`check_api.py` 的参数白名单里却没有它 —— 脚本在临时目录里，
+代码进了仓库，两边各自走，这又是一个「两套清单」。
+搬进来对齐了；以后改方法签名时白名单就跟着仓库一起改。
+
+两个老脚本（imports / api）原本没有退出码 —— 怎么跑退出码都是 0，
+接进 CI 会「假绿」。补上了，并做过反向验证：
+造一个故意传错参数的文件，确认它被检出且退出码为 1。
+
+本地检查命令不变，只是脚本位置从 skill / 临时目录改为仓库内：
+
+```bash
+python3 scripts/check_kotlin_imports.py app/src/main/java
+python3 scripts/check_api.py .
+python3 scripts/check_hook_guard.py app/src/main/java
+python3 scripts/check_selfcheck_coverage.py --root .
+python3 scripts/check_registry_consistency.py --root .
+```
+
+---
+
 ## 常见问题
 
 **「运行状态」里某项显示「未触发」，是坏了吗？**
