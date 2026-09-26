@@ -1232,3 +1232,28 @@ manifest 在 APK 里是**二进制 AXML**，字符串池可能是 UTF-16LE 也�
 - 把入口类改成 `com.yjp.tgenhance.NoSuchEntry` → 报「在 dex 里找不到」+ 退出码 1
 
 CI 里接在编译之后、整理产物之前。本地也能跑（命令见 README 的「构建」）。
+
+---
+
+### N2.9 —— Release 说明改用 CHANGELOG + 一键检查入口
+
+两件小事，都是为了让「已经写好的东西」别浪费。
+
+**1. Release 说明不再由 commit 列表自动生成。**
+
+之前用 `generate_release_notes: true`，GitHub 会把这一版的 commit 标题列一遍。
+但 CHANGELOG 里写的是「做了什么**以及为什么**」—— 后者才是下载的人想看的。
+既然已经在维护 CHANGELOG，Release 页面就别再生成一份信息量更低的副本。
+
+新增 `scripts/release_notes.py <版本>`：从 CHANGELOG 抠出该版本段落，
+CI 用它作为 Release 正文。
+
+**找不到该版本时直接失败**，而不是回退到自动生成 ——
+「发布了却没记录」和「记录里没有这一版」是同一种漂移；
+静默回退会把它藏起来，等哪天想查「这版改了什么」才发现查不到。
+
+**2. `scripts/check_all.sh`：本地一键跑全部检查。**
+
+CI 里分两段跑（源码检查在编译前，几秒就能失败不用等编译；
+产物自检在编译后，得先有 APK）。本机自查时一条命令跑完即可，
+没有 APK 会自动跳过产物自检。

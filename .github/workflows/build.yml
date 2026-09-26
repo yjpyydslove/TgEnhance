@@ -140,10 +140,21 @@ jobs:
           path: out/*.apk
           if-no-files-found: error
 
+      - name: 生成 Release 说明
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          # v N2.9：从 CHANGELOG 取这一版的说明，而不是让 GitHub 用 commit
+          # 列表自动生成 —— CHANGELOG 里写的是「做了什么 + 为什么」，
+          # 比 commit 标题有信息量得多。
+          VER="$(grep -E '^VERSION_NAME=' gradle.properties | head -1 | cut -d= -f2 | tr -d '[:space:]')"
+          echo "取 $VER 的说明"
+          python3 scripts/release_notes.py "$VER" > out/notes.md
+          wc -l out/notes.md
+
       - name: 发布到 Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: out/*.apk
-          generate_release_notes: true
+          body_path: out/notes.md
           draft: false
