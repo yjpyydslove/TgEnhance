@@ -1196,3 +1196,39 @@ README 里留一段「版本历史」指向 CHANGELOG 与 Releases。
 漏掉的一步 —— 链接看着还在，点进去却是空的。
 
 纯文档改动，代码零改动；五项静态检查照常全绿。
+
+---
+
+### N2.8 —— 加一道「产物自检」
+
+前面几版把检查都加在**编译之前**（源码层）。这一版补上**编译之后**的那一段：
+APK 打出来了，但它真的能被 LSPosed 识别吗？
+
+**为什么需要**：有一类失败是编译时毫无迹象的 ——
+APK 能编出来、能安装，但 **LSPosed 的模块列表里根本不出现它**。
+用户只看到「装了没反应」，而日志里什么线索都没有。
+
+典型成因：
+
+| 症状 | 成因 |
+|---|---|
+| 模块不出现在列表里 | `assets/xposed_init` 丢了 / manifest 少 xposed 元数据 |
+| 出现在列表里但 hook 不上 | `xposed_init` 里的入口类名写错了 |
+
+新增 `scripts/check_apk.py`，打完包后查四项：
+
+1. `assets/xposed_init` 存在且非空
+2. 里面写的入口类**真的在 dex 里**（dex 内类名用 `/` 分隔，按这个搜）
+3. manifest 含 `xposedmodule` / `xposedminversion` / `xposeddescription`
+4. 含 `classes*.dex`
+
+manifest 在 APK 里是**二进制 AXML**，字符串池可能是 UTF-16LE 也可能是 UTF-8，
+所以两种编码都试一遍。
+
+**验证**：没用模拟数据 —— 直接下载已发布的 `TgEnhance-N2.7.apk` 跑脚本，
+四项全 OK。反向验证做了两种坏包：
+
+- 删掉 `assets/xposed_init` → 报 `MISSING` + 退出码 1
+- 把入口类改成 `com.yjp.tgenhance.NoSuchEntry` → 报「在 dex 里找不到」+ 退出码 1
+
+CI 里接在编译之后、整理产物之前。本地也能跑（命令见 README 的「构建」）。

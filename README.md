@@ -306,6 +306,26 @@ git tag v1.0.0 && git push origin v1.0.0
 
 版本号在 `gradle.properties` 的 `VERSION_NAME` / `VERSION_CODE` 统一维护。
 
+### 本地跑一遍检查
+
+CI 每次都会跑；本地改完想先自查，用同一套命令：
+
+```bash
+# 源码层（五项，编译前跑）
+python3 scripts/check_kotlin_imports.py app/src/main/java   # 用了但没 import
+python3 scripts/check_api.py .                              # 参数名 + 结构完整性
+python3 scripts/check_hook_guard.py app/src/main/java       # 回调异常防护
+python3 scripts/check_selfcheck_coverage.py --root .        # 没人绕过注册表
+python3 scripts/check_registry_consistency.py --root .      # 注册表引用一致
+
+# 产物层（打完包之后跑）
+python3 scripts/check_apk.py app/build/outputs/apk/release/TgEnhance-*.apk
+```
+
+本机没有 Android SDK / Kotlin 编译器，这几项是唯一的安全网。
+`check_apk.py` 查的是「编译成功但装上去不能用」那类问题 ——
+缺 `assets/xposed_init`、manifest 少 xposed 元数据等。
+
 ---
 
 ## 安装

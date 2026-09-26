@@ -104,6 +104,19 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx3072m -Dfile.encoding=UTF-8"
 
+      - name: 产物自检
+        run: |
+          # v N2.8：**「编译成功」不等于「装上去能用」**。
+          #
+          # 缺 `assets/xposed_init`、manifest 少 xposed 元数据这类问题，
+          # 编译会过、安装也会成功，但 LSPosed 的模块列表里根本不出现本模块 ——
+          # 用户只看到「装了没反应」，而日志里什么线索都没有。
+          # 这类问题在发布前查一下只要几秒钟。
+          APK="$(find app/build/outputs/apk/release -name '*.apk' -print -quit)"
+          [ -n "$APK" ] || { echo "::error::未找到 APK，无法自检"; exit 1; }
+          echo "自检 $APK"
+          python3 scripts/check_apk.py "$APK"
+
       - name: 整理产物
         run: |
           set -e
